@@ -9,7 +9,7 @@ import {
   type SurveyState,
 } from '../types/survey'
 
-export const SURVEY_STORAGE_KEY = 'young-camp-survey:draft'
+export const SURVEY_STORAGE_KEY = 'youth-camp-survey:draft'
 
 interface PersistedSurveyDraft {
   schemaVersion: number

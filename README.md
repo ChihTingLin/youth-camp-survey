@@ -1,4 +1,4 @@
-# Young Camp Survey
+# Youth Camp Survey
 
 Mobile-first pre-camp questionnaire built with React, TypeScript, Vite, and
 Tailwind CSS.

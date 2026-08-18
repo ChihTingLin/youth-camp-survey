@@ -12,7 +12,7 @@ import {
   SurveySubmissionError,
 } from '../app/surveySubmission'
 
-const SUBMISSION_ID_STORAGE_KEY = 'young-camp-survey:submission-id'
+const SUBMISSION_ID_STORAGE_KEY = 'youth-camp-survey:submission-id'
 
 type SubmissionState =
   | { status: 'idle'; error: null }
