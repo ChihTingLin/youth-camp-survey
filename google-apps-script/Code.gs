@@ -1,0 +1,631 @@
+const SPREADSHEET_ID = '1_1xazCEYAIFTRQo6t5INUjTlqNlkWuLWLR2llry7u8w';
+const RESPONSES_SHEET_ID = 0;
+const RESPONSES_SHEET_NAME = 'Responses';
+
+const RESPONSE_HEADERS = [
+  'submittedAt',
+  'submissionId',
+  'schemaVersion',
+  'group',
+  'name',
+  'focusAreas',
+  'focusAreasOther',
+  'recentMood',
+  'recentMoodOther',
+  'physicalEnergy',
+  'psychologicalEnergy',
+  'bodySignals',
+  'bodySignalsOther',
+  'campExpectation',
+];
+
+const LEGACY_RESPONSE_HEADERS = [
+  'submittedAt',
+  'submissionId',
+  'schemaVersion',
+  'group',
+  'name',
+  'focusAreas',
+  'recentMood',
+  'physicalEnergy',
+  'psychologicalEnergy',
+  'bodySignals',
+  'bodySignalsOther',
+  'campExpectation',
+];
+
+const SCHEMA_VERSION = 2;
+const PROFILE_MAX_LENGTH = 80;
+const OTHER_CHOICE_MAX_LENGTH = 300;
+const BODY_SIGNAL_OTHER_MAX_LENGTH = 300;
+const CAMP_EXPECTATION_MAX_LENGTH = 2000;
+const MIN_PUBLIC_STATISTICS_RESPONSES = 5;
+
+const FOCUS_AREA_IDS = [
+  'work',
+  'finances',
+  'family',
+  'relationships',
+  'health',
+  'futureDirection',
+  'selfGrowth',
+  'other',
+];
+
+const MOOD_IDS = [
+  'busy',
+  'anxious',
+  'empty',
+  'pressured',
+  'drained',
+  'lost',
+  'stable',
+  'fulfilled',
+  'hopeful',
+  'other',
+];
+
+const BODY_SIGNAL_IDS = [
+  'shoulderTension',
+  'chestTightness',
+  'stomachDiscomfort',
+  'headache',
+  'poorSleep',
+  'fatigue',
+  'mentalTension',
+  'relaxed',
+  'noSpecialFeeling',
+];
+
+/** Returns aggregate-only statistics for the participant-facing dashboard. */
+function doGet(event) {
+  if (!event || !event.parameter || event.parameter.action !== 'stats') {
+    return jsonResponse_({
+      ok: false,
+      error: 'UNKNOWN_ACTION',
+      message: 'Use action=stats to request public statistics.',
+    });
+  }
+
+  try {
+    return jsonResponse_(getPublicSurveyStatistics_());
+  } catch (error) {
+    console.error(error);
+    return jsonResponse_({
+      ok: false,
+      error: 'STATISTICS_UNAVAILABLE',
+      message: 'Statistics are temporarily unavailable.',
+    });
+  }
+}
+
+/**
+ * Run this once from the Apps Script editor attached to the response Sheet.
+ * It refuses to overwrite an existing, non-matching header row.
+ */
+function setupResponsesSheet() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = spreadsheet
+    .getSheets()
+    .find((candidate) => candidate.getSheetId() === RESPONSES_SHEET_ID);
+
+  if (!sheet) {
+    throw new Error(`Could not find the worksheet with gid=${RESPONSES_SHEET_ID}.`);
+  }
+
+  const currentHeaders = sheet
+    .getRange(1, 1, 1, RESPONSE_HEADERS.length)
+    .getDisplayValues()[0];
+  const hasExistingHeaders = currentHeaders.some((value) => value.trim() !== '');
+  const headersMatch = RESPONSE_HEADERS.every(
+    (header, index) => currentHeaders[index] === header,
+  );
+  const legacyHeadersMatch = LEGACY_RESPONSE_HEADERS.every(
+    (header, index) => currentHeaders[index] === header,
+  );
+
+  if (hasExistingHeaders && !headersMatch && !legacyHeadersMatch) {
+    throw new Error(
+      'Row 1 already contains different values. Clear it or verify the target worksheet before running setup again.',
+    );
+  }
+
+  if (legacyHeadersMatch) {
+    // Preserve existing responses while adding the two new free-text columns.
+    sheet.insertColumnAfter(6);
+    sheet.insertColumnAfter(8);
+  }
+
+  sheet.setName(RESPONSES_SHEET_NAME);
+  const headerRange = sheet.getRange(1, 1, 1, RESPONSE_HEADERS.length);
+  headerRange.setValues([RESPONSE_HEADERS]);
+  headerRange
+    .setBackground('#31413c')
+    .setFontColor('#ffffff')
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center');
+
+  sheet.setFrozenRows(1);
+  sheet.setRowHeight(1, 36);
+  sheet.getRange('A:A').setNumberFormat('yyyy-mm-dd hh:mm:ss');
+  sheet.getRange('J:K').setNumberFormat('0');
+  sheet.getRange('F:I').setWrap(true);
+  sheet.getRange('L:N').setWrap(true);
+
+  const energyValidation = SpreadsheetApp.newDataValidation()
+    .requireNumberBetween(1, 10)
+    .setAllowInvalid(false)
+    .setHelpText('Enter an integer from 1 to 10.')
+    .build();
+  sheet.getRange('J2:K').setDataValidation(energyValidation);
+
+  const widths = [
+    150, 180, 110, 130, 130, 220, 220, 150, 220, 130, 150, 240, 220,
+    360,
+  ];
+  widths.forEach((width, index) => sheet.setColumnWidth(index + 1, width));
+
+  spreadsheet.toast('Response fields are ready.', 'Survey setup', 5);
+}
+
+/**
+ * Accepts a JSON survey submission and appends it to the response worksheet.
+ *
+ * Expected payload:
+ * {
+ *   submissionId: string,
+ *   schemaVersion: 2,
+ *   profile: { group: string, name: string },
+ *   answers: {
+ *     focusAreas: { selections: string[], other: string },
+ *     recentMood: { selection: string, other: string },
+ *     physicalEnergy: number,
+ *     psychologicalEnergy: number,
+ *     bodySignals: { selections: string[], other: string },
+ *     campExpectation: string
+ *   }
+ * }
+ */
+function doPost(event) {
+  try {
+    if (!event || !event.postData || !event.postData.contents) {
+      return jsonResponse_({
+        ok: false,
+        error: 'EMPTY_REQUEST',
+        message: 'The request body is required.',
+      });
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(event.postData.contents);
+    } catch (error) {
+      return jsonResponse_({
+        ok: false,
+        error: 'INVALID_JSON',
+        message: 'The request body must contain valid JSON.',
+      });
+    }
+
+    const submission = validateSubmission_(payload);
+    const lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+
+    try {
+      const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const sheet = spreadsheet
+        .getSheets()
+        .find((candidate) => candidate.getSheetId() === RESPONSES_SHEET_ID);
+
+      if (!sheet) {
+        throw new Error(`Could not find the worksheet with gid=${RESPONSES_SHEET_ID}.`);
+      }
+
+      assertHeaders_(sheet);
+
+      if (hasSubmission_(sheet, submission.submissionId)) {
+        return jsonResponse_({
+          ok: true,
+          duplicate: true,
+          submissionId: submission.submissionId,
+        });
+      }
+
+      sheet.appendRow([
+        new Date(),
+        safeCell_(submission.submissionId),
+        submission.schemaVersion,
+        safeCell_(submission.profile.group),
+        safeCell_(submission.profile.name),
+        safeCell_(JSON.stringify(submission.answers.focusAreas.selections)),
+        safeCell_(submission.answers.focusAreas.other),
+        safeCell_(submission.answers.recentMood.selection),
+        safeCell_(submission.answers.recentMood.other),
+        submission.answers.physicalEnergy,
+        submission.answers.psychologicalEnergy,
+        safeCell_(JSON.stringify(submission.answers.bodySignals.selections)),
+        safeCell_(submission.answers.bodySignals.other),
+        safeCell_(submission.answers.campExpectation),
+      ]);
+
+      return jsonResponse_({
+        ok: true,
+        duplicate: false,
+        submissionId: submission.submissionId,
+      });
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (error) {
+    console.error(error);
+    return jsonResponse_({
+      ok: false,
+      error: 'INVALID_SUBMISSION',
+      message: error instanceof Error ? error.message : 'Submission failed.',
+    });
+  }
+}
+
+function validateSubmission_(payload) {
+  assertPlainObject_(payload, 'Submission');
+  assertString_(payload.submissionId, 'submissionId', 1, 100);
+
+  if (payload.schemaVersion !== SCHEMA_VERSION) {
+    throw new Error(`schemaVersion must be ${SCHEMA_VERSION}.`);
+  }
+
+  assertPlainObject_(payload.profile, 'profile');
+  assertString_(payload.profile.group, 'group', 0, PROFILE_MAX_LENGTH);
+  assertString_(payload.profile.name, 'name', 0, PROFILE_MAX_LENGTH);
+
+  assertPlainObject_(payload.answers, 'answers');
+  const answers = payload.answers;
+  assertPlainObject_(answers.focusAreas, 'focusAreas');
+  const focusAreas = validateSelection_(
+    answers.focusAreas.selections,
+    FOCUS_AREA_IDS,
+    'focusAreas.selections',
+    true,
+  );
+  assertString_(
+    answers.focusAreas.other,
+    'focusAreas.other',
+    0,
+    OTHER_CHOICE_MAX_LENGTH,
+  );
+  assertOtherSelection_(
+    focusAreas.includes('other'),
+    answers.focusAreas.other,
+    'focusAreas.other',
+  );
+
+  assertPlainObject_(answers.recentMood, 'recentMood');
+  if (!MOOD_IDS.includes(answers.recentMood.selection)) {
+    throw new Error('recentMood contains an unsupported value.');
+  }
+  assertString_(
+    answers.recentMood.other,
+    'recentMood.other',
+    0,
+    OTHER_CHOICE_MAX_LENGTH,
+  );
+  assertOtherSelection_(
+    answers.recentMood.selection === 'other',
+    answers.recentMood.other,
+    'recentMood.other',
+  );
+
+  assertScale_(answers.physicalEnergy, 'physicalEnergy');
+  assertScale_(answers.psychologicalEnergy, 'psychologicalEnergy');
+
+  assertPlainObject_(answers.bodySignals, 'bodySignals');
+  const bodySelections = validateSelection_(
+    answers.bodySignals.selections,
+    BODY_SIGNAL_IDS,
+    'bodySignals.selections',
+    false,
+  );
+  assertString_(
+    answers.bodySignals.other,
+    'bodySignals.other',
+    0,
+    BODY_SIGNAL_OTHER_MAX_LENGTH,
+  );
+
+  if (
+    bodySelections.length === 0 &&
+    answers.bodySignals.other.trim().length === 0
+  ) {
+    throw new Error('At least one body signal or other description is required.');
+  }
+
+  assertString_(
+    answers.campExpectation,
+    'campExpectation',
+    0,
+    CAMP_EXPECTATION_MAX_LENGTH,
+  );
+
+  return {
+    submissionId: payload.submissionId.trim(),
+    schemaVersion: payload.schemaVersion,
+    profile: {
+      group: payload.profile.group.trim(),
+      name: payload.profile.name.trim(),
+    },
+    answers: {
+      focusAreas: {
+        selections: focusAreas,
+        other: focusAreas.includes('other')
+          ? answers.focusAreas.other.trim()
+          : '',
+      },
+      recentMood: {
+        selection: answers.recentMood.selection,
+        other:
+          answers.recentMood.selection === 'other'
+            ? answers.recentMood.other.trim()
+            : '',
+      },
+      physicalEnergy: answers.physicalEnergy,
+      psychologicalEnergy: answers.psychologicalEnergy,
+      bodySignals: {
+        selections: bodySelections,
+        other: answers.bodySignals.other.trim(),
+      },
+      campExpectation: answers.campExpectation.trim(),
+    },
+  };
+}
+
+function assertOtherSelection_(isOtherSelected, value, fieldName) {
+  if (isOtherSelected && value.trim().length === 0) {
+    throw new Error(`${fieldName} is required when other is selected.`);
+  }
+}
+
+function validateSelection_(value, allowedValues, fieldName, required) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${fieldName} must be an array.`);
+  }
+
+  if (required && value.length === 0) {
+    throw new Error(`${fieldName} requires at least one selection.`);
+  }
+
+  if (value.some((item) => !allowedValues.includes(item))) {
+    throw new Error(`${fieldName} contains an unsupported value.`);
+  }
+
+  if (new Set(value).size !== value.length) {
+    throw new Error(`${fieldName} cannot contain duplicate values.`);
+  }
+
+  return value.slice();
+}
+
+function assertPlainObject_(value, fieldName) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${fieldName} must be an object.`);
+  }
+}
+
+function assertString_(value, fieldName, minLength, maxLength) {
+  if (typeof value !== 'string') {
+    throw new Error(`${fieldName} must be a string.`);
+  }
+
+  const length = value.trim().length;
+  if (length < minLength || length > maxLength) {
+    throw new Error(
+      `${fieldName} must contain between ${minLength} and ${maxLength} characters.`,
+    );
+  }
+}
+
+function assertScale_(value, fieldName) {
+  if (!Number.isInteger(value) || value < 1 || value > 10) {
+    throw new Error(`${fieldName} must be an integer from 1 to 10.`);
+  }
+}
+
+function assertHeaders_(sheet) {
+  const actualHeaders = sheet
+    .getRange(1, 1, 1, RESPONSE_HEADERS.length)
+    .getDisplayValues()[0];
+  const headersMatch = RESPONSE_HEADERS.every(
+    (header, index) => actualHeaders[index] === header,
+  );
+
+  if (!headersMatch) {
+    throw new Error('The response worksheet headers do not match the expected schema.');
+  }
+}
+
+function hasSubmission_(sheet, submissionId) {
+  if (sheet.getLastRow() < 2) {
+    return false;
+  }
+
+  return Boolean(
+    sheet
+      .getRange(2, 2, sheet.getLastRow() - 1, 1)
+      .createTextFinder(submissionId)
+      .matchEntireCell(true)
+      .findNext(),
+  );
+}
+
+function safeCell_(value) {
+  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+}
+
+function jsonResponse_(body) {
+  return ContentService.createTextOutput(JSON.stringify(body)).setMimeType(
+    ContentService.MimeType.JSON,
+  );
+}
+
+/** Adds the private response dashboard entry to the Google Sheet menu. */
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('問卷回覆')
+    .addItem('開啟回覆總覽', 'showResponsesDashboard')
+    .addToUi();
+}
+
+/** Opens the dashboard for users who already have access to this Sheet. */
+function showResponsesDashboard() {
+  const output = HtmlService.createHtmlOutputFromFile('Responses')
+    .setWidth(960)
+    .setHeight(680);
+
+  SpreadsheetApp.getUi().showModelessDialog(output, '營隊問卷回覆總覽');
+}
+
+/**
+ * Called only from the Sheet-hosted dashboard through google.script.run.
+ * Dates and ranges are normalized to browser-safe plain objects.
+ */
+function getSurveyResponses() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = spreadsheet
+    .getSheets()
+    .find((candidate) => candidate.getSheetId() === RESPONSES_SHEET_ID);
+
+  if (!sheet) {
+    throw new Error(`Could not find the worksheet with gid=${RESPONSES_SHEET_ID}.`);
+  }
+
+  assertHeaders_(sheet);
+  const responseCount = Math.max(0, sheet.getLastRow() - 1);
+  if (responseCount === 0) {
+    return { generatedAt: new Date().toISOString(), responses: [] };
+  }
+
+  const rows = sheet
+    .getRange(2, 1, responseCount, RESPONSE_HEADERS.length)
+    .getValues();
+  const responses = rows.map((row) => ({
+    submittedAt: asIsoDate_(row[0]),
+    submissionId: String(row[1] || ''),
+    schemaVersion: Number(row[2]) || SCHEMA_VERSION,
+    group: String(row[3] || ''),
+    name: String(row[4] || ''),
+    focusAreas: parseStoredSelections_(row[5]),
+    focusAreasOther: String(row[6] || ''),
+    recentMood: String(row[7] || ''),
+    recentMoodOther: String(row[8] || ''),
+    physicalEnergy: Number(row[9]) || 0,
+    psychologicalEnergy: Number(row[10]) || 0,
+    bodySignals: parseStoredSelections_(row[11]),
+    bodySignalsOther: String(row[12] || ''),
+    campExpectation: String(row[13] || ''),
+  }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    responses: responses.reverse(),
+  };
+}
+
+function getPublicSurveyStatistics_() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = spreadsheet
+    .getSheets()
+    .find((candidate) => candidate.getSheetId() === RESPONSES_SHEET_ID);
+
+  if (!sheet) {
+    throw new Error(`Could not find the worksheet with gid=${RESPONSES_SHEET_ID}.`);
+  }
+
+  assertHeaders_(sheet);
+  const rowCount = Math.max(0, sheet.getLastRow() - 1);
+  const rows = rowCount === 0
+    ? []
+    : sheet.getRange(2, 1, rowCount, RESPONSE_HEADERS.length).getValues();
+  const responses = rows.filter((row) => String(row[1] || '').trim() !== '');
+  const totalResponses = responses.length;
+
+  if (totalResponses < MIN_PUBLIC_STATISTICS_RESPONSES) {
+    return {
+      ok: true,
+      available: false,
+      totalResponses,
+      minimumResponses: MIN_PUBLIC_STATISTICS_RESPONSES,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  const focusAreas = countSelections_(
+    FOCUS_AREA_IDS,
+    responses.map((row) => parseStoredSelections_(row[5])),
+  );
+  const recentMoods = countValues_(
+    MOOD_IDS,
+    responses.map((row) => String(row[7] || '')),
+  );
+  const bodySignals = countSelections_(
+    BODY_SIGNAL_IDS,
+    responses.map((row) => parseStoredSelections_(row[11])),
+  );
+
+  return {
+    ok: true,
+    available: true,
+    totalResponses,
+    minimumResponses: MIN_PUBLIC_STATISTICS_RESPONSES,
+    generatedAt: new Date().toISOString(),
+    averagePhysicalEnergy: averageNumbers_(responses.map((row) => row[9])),
+    averagePsychologicalEnergy: averageNumbers_(responses.map((row) => row[10])),
+    focusAreas,
+    recentMoods,
+    bodySignals,
+  };
+}
+
+function countSelections_(allowedIds, selections) {
+  const counts = Object.fromEntries(allowedIds.map((id) => [id, 0]));
+  selections.forEach((items) => {
+    [...new Set(items)].forEach((id) => {
+      if (Object.prototype.hasOwnProperty.call(counts, id)) counts[id] += 1;
+    });
+  });
+  return counts;
+}
+
+function countValues_(allowedIds, values) {
+  const counts = Object.fromEntries(allowedIds.map((id) => [id, 0]));
+  values.forEach((id) => {
+    if (Object.prototype.hasOwnProperty.call(counts, id)) counts[id] += 1;
+  });
+  return counts;
+}
+
+function averageNumbers_(values) {
+  const valid = values
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value >= 1 && value <= 10);
+  if (valid.length === 0) return null;
+  return Math.round((valid.reduce((sum, value) => sum + value, 0) / valid.length) * 10) / 10;
+}
+
+function parseStoredSelections_(value) {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value !== 'string' || value.trim() === '') return [];
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch (error) {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+}
+
+function asIsoDate_(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}

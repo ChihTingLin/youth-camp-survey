@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      :root {
+        color: #31413c;
+        background: #f7f1e7;
+        font-family: "Noto Sans TC", "PingFang TC", system-ui, sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+      body { margin: 0; background: linear-gradient(145deg, #fbf6ee, #e7eadc); }
+      button, input, select { font: inherit; }
+
+      .app { min-height: 100vh; padding: 24px; }
+      .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+      .eyebrow { margin: 0 0 5px; color: #506f5e; font-size: 13px; font-weight: 700; letter-spacing: .14em; }
+      h1 { margin: 0; font-size: 28px; line-height: 1.25; }
+      .updated { margin: 7px 0 0; color: #66736e; font-size: 12px; }
+
+      .refresh {
+        min-height: 42px;
+        border: 0;
+        border-radius: 999px;
+        padding: 0 18px;
+        color: white;
+        background: #506f5e;
+        cursor: pointer;
+      }
+      .refresh:hover { background: #31413c; }
+      .refresh:disabled { cursor: wait; opacity: .6; }
+      .refresh:focus-visible, input:focus-visible, select:focus-visible {
+        outline: 2px solid #506f5e;
+        outline-offset: 2px;
+      }
+
+      .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 22px; }
+      .metric { border: 1px solid rgba(80,111,94,.14); border-radius: 18px; padding: 14px 16px; background: rgba(255,255,255,.68); }
+      .metric-label { color: #66736e; font-size: 12px; }
+      .metric-value { margin-top: 3px; font-size: 24px; font-weight: 750; }
+
+      .toolbar { display: grid; grid-template-columns: minmax(220px,1fr) 180px 140px; gap: 10px; margin-top: 18px; }
+      .toolbar input, .toolbar select {
+        min-height: 42px;
+        width: 100%;
+        border: 1px solid rgba(80,111,94,.22);
+        border-radius: 13px;
+        padding: 0 13px;
+        color: #31413c;
+        background: rgba(255,255,255,.78);
+      }
+
+      .results-meta { margin: 16px 2px 9px; color: #66736e; font-size: 13px; }
+      .responses { display: grid; gap: 12px; max-height: 410px; overflow: auto; padding: 2px 4px 18px 2px; }
+      .card { border: 1px solid rgba(80,111,94,.14); border-radius: 22px; padding: 17px; background: rgba(255,255,255,.76); box-shadow: 0 10px 30px rgba(49,65,60,.06); }
+      .card-head { display: flex; justify-content: space-between; gap: 16px; }
+      .identity { font-size: 17px; font-weight: 750; }
+      .group { margin-left: 7px; color: #506f5e; font-size: 13px; font-weight: 600; }
+      .date { color: #6f7b76; font-size: 12px; white-space: nowrap; }
+      .details { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 15px; margin-top: 14px; }
+      .details > div:last-child { grid-column: span 2; }
+      .label { margin-bottom: 6px; color: #6f7b76; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+      .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+      .chip { border-radius: 999px; padding: 4px 9px; color: #3d5549; background: #dfe8d9; font-size: 12px; }
+      .energy { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; margin-bottom: 7px; font-size: 12px; }
+      .energy-track { height: 7px; overflow: hidden; border-radius: 999px; background: #dce3d8; }
+      .energy-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg,#e9a080,#efbd67,#506f5e); }
+      .expectation { margin: 0; white-space: pre-wrap; color: #43524d; font-size: 13px; line-height: 1.55; }
+      .muted { color: #8b938f; }
+      .state { margin-top: 45px; text-align: center; color: #66736e; }
+      .error { color: #8b2e2e; }
+
+      @media (max-width: 720px) {
+        .app { padding: 18px; }
+        .summary { grid-template-columns: 1fr; }
+        .toolbar { grid-template-columns: 1fr; }
+        .details { grid-template-columns: 1fr; }
+        .details > div:last-child { grid-column: auto; }
+        .responses { max-height: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <div>
+          <p class="eyebrow">PRIVATE DASHBOARD</p>
+          <h1>營隊問卷回覆</h1>
+          <p id="updated" class="updated">正在讀取最新資料…</p>
+        </div>
+        <button id="refresh" class="refresh" type="button">重新整理</button>
+      </header>
+
+      <section id="summary" class="summary" aria-label="回覆摘要"></section>
+
+      <section class="toolbar" aria-label="篩選回覆">
+        <input id="search" type="search" placeholder="搜尋姓名、組別或回答">
+        <select id="group"><option value="">所有組別</option></select>
+        <select id="sort">
+          <option value="newest">最新優先</option>
+          <option value="oldest">最早優先</option>
+        </select>
+      </section>
+
+      <p id="results-meta" class="results-meta"></p>
+      <section id="responses" class="responses" aria-live="polite">
+        <p class="state">正在整理回覆…</p>
+      </section>
+    </main>
+
+    <script>
+      const focusLabels = {
+        work: '工作', finances: '經濟', family: '家庭', relationships: '感情',
+        health: '健康', futureDirection: '未來方向', selfGrowth: '自我成長', other: '其他'
+      };
+      const moodLabels = {
+        busy: '忙碌', anxious: '焦慮', empty: '空虛', pressured: '壓力',
+        drained: '無力', lost: '迷惘', stable: '穩定', fulfilled: '充實',
+        hopeful: '期待', other: '其他'
+      };
+      const bodyLabels = {
+        shoulderTension: '肩膀緊繃', chestTightness: '胸口悶',
+        stomachDiscomfort: '胃不舒服', headache: '頭痛', poorSleep: '睡不好',
+        fatigue: '疲憊', mentalTension: '思緒緊繃', relaxed: '輕鬆自在',
+        noSpecialFeeling: '沒有特別感覺'
+      };
+
+      let allResponses = [];
+      const refreshButton = document.getElementById('refresh');
+      const searchInput = document.getElementById('search');
+      const groupSelect = document.getElementById('group');
+      const sortSelect = document.getElementById('sort');
+
+      refreshButton.addEventListener('click', loadResponses);
+      searchInput.addEventListener('input', renderResponses);
+      groupSelect.addEventListener('change', renderResponses);
+      sortSelect.addEventListener('change', renderResponses);
+      loadResponses();
+
+      function loadResponses() {
+        refreshButton.disabled = true;
+        refreshButton.textContent = '讀取中…';
+        google.script.run
+          .withSuccessHandler((result) => {
+            allResponses = Array.isArray(result.responses) ? result.responses : [];
+            document.getElementById('updated').textContent =
+              `更新時間：${formatDate(result.generatedAt)}`;
+            populateGroups();
+            renderSummary();
+            renderResponses();
+            finishLoading();
+          })
+          .withFailureHandler((error) => {
+            const container = document.getElementById('responses');
+            container.replaceChildren(element('p', 'state error', error.message || '讀取失敗，請稍後再試。'));
+            finishLoading();
+          })
+          .getSurveyResponses();
+      }
+
+      function finishLoading() {
+        refreshButton.disabled = false;
+        refreshButton.textContent = '重新整理';
+      }
+
+      function populateGroups() {
+        const current = groupSelect.value;
+        const groups = [...new Set(allResponses.map((item) => item.group).filter(Boolean))]
+          .sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+        groupSelect.replaceChildren(new Option('所有組別', ''));
+        groups.forEach((group) => groupSelect.add(new Option(group, group)));
+        groupSelect.value = groups.includes(current) ? current : '';
+      }
+
+      function renderSummary() {
+        const physical = average(allResponses.map((item) => item.physicalEnergy));
+        const psychological = average(allResponses.map((item) => item.psychologicalEnergy));
+        const summary = document.getElementById('summary');
+        summary.replaceChildren(
+          metric('總回覆數', String(allResponses.length)),
+          metric('平均身體能量', physical ? `${physical} / 10` : '—'),
+          metric('平均心理能量', psychological ? `${psychological} / 10` : '—')
+        );
+      }
+
+      function renderResponses() {
+        const query = searchInput.value.trim().toLocaleLowerCase('zh-Hant');
+        const selectedGroup = groupSelect.value;
+        const items = allResponses
+          .filter((item) => !selectedGroup || item.group === selectedGroup)
+          .filter((item) => !query || searchableText(item).includes(query))
+          .slice()
+          .sort((a, b) => {
+            const difference = new Date(b.submittedAt) - new Date(a.submittedAt);
+            return sortSelect.value === 'oldest' ? -difference : difference;
+          });
+
+        document.getElementById('results-meta').textContent = `顯示 ${items.length} 筆回覆`;
+        const container = document.getElementById('responses');
+        if (items.length === 0) {
+          container.replaceChildren(element('p', 'state', '目前沒有符合條件的回覆。'));
+          return;
+        }
+        container.replaceChildren(...items.map(responseCard));
+      }
+
+      function responseCard(item) {
+        const card = element('article', 'card');
+        const head = element('div', 'card-head');
+        const identity = element('div', 'identity', item.name || '未留姓名');
+        identity.append(element('span', 'group', item.group || '未填組別'));
+        head.append(identity, element('time', 'date', formatDate(item.submittedAt)));
+
+        const details = element('div', 'details');
+        details.append(
+          detail('關注的事情', chips(withOther(item.focusAreas, focusLabels, item.focusAreasOther))),
+          detail('最近感受', chips(withOther([item.recentMood], moodLabels, item.recentMoodOther))),
+          energyDetail(item),
+          detail('身體狀態', chips(withOther(item.bodySignals, bodyLabels, item.bodySignalsOther))),
+          detail('營隊期待', element('p', `expectation${item.campExpectation ? '' : ' muted'}`, item.campExpectation || '未填寫'))
+        );
+        card.append(head, details);
+        return card;
+      }
+
+      function energyDetail(item) {
+        const wrapper = element('div');
+        wrapper.append(element('div', 'label', '能量水平'));
+        wrapper.append(
+          energyRow('身體', item.physicalEnergy),
+          energyRow('心理', item.psychologicalEnergy)
+        );
+        return wrapper;
+      }
+
+      function energyRow(label, value) {
+        const row = element('div', 'energy');
+        const track = element('div', 'energy-track');
+        const fill = element('div', 'energy-fill');
+        fill.style.width = `${Math.max(0, Math.min(10, value)) * 10}%`;
+        track.append(fill);
+        row.append(element('span', '', label), track, element('strong', '', String(value || '—')));
+        return row;
+      }
+
+      function withOther(ids, labels, other) {
+        const values = (ids || [])
+          .filter((id) => id && !(id === 'other' && other))
+          .map((id) => labels[id] || id);
+        if (other) values.push(`其他：${other}`);
+        return values;
+      }
+
+      function chips(values) {
+        const wrapper = element('div', 'chips');
+        if (!values.length) wrapper.append(element('span', 'muted', '未填寫'));
+        values.forEach((value) => wrapper.append(element('span', 'chip', value)));
+        return wrapper;
+      }
+
+      function detail(label, content) {
+        const wrapper = element('div');
+        wrapper.append(element('div', 'label', label), content);
+        return wrapper;
+      }
+
+      function metric(label, value) {
+        const wrapper = element('div', 'metric');
+        wrapper.append(element('div', 'metric-label', label), element('div', 'metric-value', value));
+        return wrapper;
+      }
+
+      function average(values) {
+        const valid = values.filter((value) => Number.isFinite(value) && value > 0);
+        if (!valid.length) return null;
+        return (valid.reduce((sum, value) => sum + value, 0) / valid.length).toFixed(1);
+      }
+
+      function searchableText(item) {
+        return [
+          item.name, item.group,
+          item.focusAreas.map((id) => focusLabels[id] || id).join(' '),
+          item.focusAreasOther, moodLabels[item.recentMood] || item.recentMood,
+          item.recentMoodOther,
+          item.bodySignals.map((id) => bodyLabels[id] || id).join(' '),
+          item.bodySignalsOther, item.campExpectation
+        ].join(' ').toLocaleLowerCase('zh-Hant');
+      }
+
+      function formatDate(value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '時間不明';
+        return new Intl.DateTimeFormat('zh-TW', {
+          dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Taipei'
+        }).format(date);
+      }
+
+      function element(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+      }
+    </script>
+  </body>
+</html>
