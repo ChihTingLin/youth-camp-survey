@@ -42,6 +42,12 @@
       .metric-label { color: #66736e; font-size: 12px; }
       .metric-value { margin-top: 3px; font-size: 24px; font-weight: 750; }
 
+      .view-switch { display: inline-flex; gap: 4px; margin-top: 18px; border: 1px solid rgba(80,111,94,.16); border-radius: 999px; padding: 4px; background: rgba(255,255,255,.56); }
+      .view-button { min-height: 38px; border: 0; border-radius: 999px; padding: 0 16px; color: #66736e; background: transparent; cursor: pointer; }
+      .view-button:hover { color: #31413c; }
+      .view-button.active { color: white; background: #506f5e; box-shadow: 0 5px 14px rgba(49,65,60,.14); }
+      .view-button:focus-visible { outline: 2px solid #506f5e; outline-offset: 2px; }
+
       .toolbar { display: grid; grid-template-columns: minmax(220px,1fr) 180px 140px; gap: 10px; margin-top: 18px; }
       .toolbar input, .toolbar select {
         min-height: 42px;
@@ -70,6 +76,11 @@
       .energy-track { height: 7px; overflow: hidden; border-radius: 999px; background: #dce3d8; }
       .energy-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg,#e9a080,#efbd67,#506f5e); }
       .expectation { margin: 0; white-space: pre-wrap; color: #43524d; font-size: 13px; line-height: 1.55; }
+      .expectation-card { position: relative; overflow: hidden; padding: 20px 22px; background: rgba(255,253,245,.9); }
+      .expectation-card::after { content: ""; position: absolute; inset: auto -24px -32px auto; width: 100px; height: 100px; border-radius: 50%; background: rgba(239,189,103,.14); pointer-events: none; }
+      .expectation-card .card-head { align-items: center; }
+      .expectation-body { position: relative; margin: 18px 0 2px; padding-left: 24px; white-space: pre-wrap; color: #31413c; font-size: 17px; line-height: 1.75; }
+      .expectation-mark { position: absolute; top: -9px; left: 0; color: #e4a45f; font-family: Georgia, serif; font-size: 38px; line-height: 1; }
       .muted { color: #8b938f; }
       .state { margin-top: 45px; text-align: center; color: #66736e; }
       .error { color: #8b2e2e; }
@@ -77,6 +88,7 @@
       @media (max-width: 720px) {
         .app { padding: 18px; }
         .summary { grid-template-columns: 1fr; }
+        .view-switch { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
         .toolbar { grid-template-columns: 1fr; }
         .details { grid-template-columns: 1fr; }
         .details > div:last-child { grid-column: auto; }
@@ -96,6 +108,11 @@
       </header>
 
       <section id="summary" class="summary" aria-label="回覆摘要"></section>
+
+      <nav class="view-switch" aria-label="回覆顯示方式">
+        <button class="view-button active" type="button" data-view="all" aria-pressed="true">完整回覆</button>
+        <button class="view-button" type="button" data-view="expectations" aria-pressed="false">營隊期待</button>
+      </nav>
 
       <section class="toolbar" aria-label="篩選回覆">
         <input id="search" type="search" placeholder="搜尋姓名、組別或回答">
@@ -134,16 +151,36 @@
       };
 
       let allResponses = [];
+      let activeView = 'all';
       const refreshButton = document.getElementById('refresh');
       const searchInput = document.getElementById('search');
       const groupSelect = document.getElementById('group');
       const sortSelect = document.getElementById('sort');
+      const viewButtons = [...document.querySelectorAll('[data-view]')];
 
       refreshButton.addEventListener('click', loadResponses);
       searchInput.addEventListener('input', renderResponses);
       groupSelect.addEventListener('change', renderResponses);
       sortSelect.addEventListener('change', renderResponses);
+      viewButtons.forEach((button) => {
+        button.addEventListener('click', () => setActiveView(button.dataset.view));
+      });
       loadResponses();
+
+      function setActiveView(view) {
+        if (view !== 'all' && view !== 'expectations') return;
+        activeView = view;
+        viewButtons.forEach((button) => {
+          const selected = button.dataset.view === view;
+          button.classList.toggle('active', selected);
+          button.setAttribute('aria-pressed', String(selected));
+        });
+        searchInput.placeholder = view === 'expectations'
+          ? '搜尋營隊期待、姓名或組別'
+          : '搜尋姓名、組別或回答';
+        renderSummary();
+        renderResponses();
+      }
 
       function loadResponses() {
         refreshButton.disabled = true;
@@ -181,9 +218,23 @@
       }
 
       function renderSummary() {
+        const summary = document.getElementById('summary');
+        if (activeView === 'expectations') {
+          const expectations = allResponses.filter((item) => item.campExpectation.trim());
+          const percentage = allResponses.length
+            ? Math.round((expectations.length / allResponses.length) * 100)
+            : 0;
+          const representedGroups = new Set(expectations.map((item) => item.group).filter(Boolean));
+          summary.replaceChildren(
+            metric('已填期待', String(expectations.length)),
+            metric('填寫比例', `${percentage}%`),
+            metric('涵蓋組別', String(representedGroups.size))
+          );
+          return;
+        }
+
         const physical = average(allResponses.map((item) => item.physicalEnergy));
         const psychological = average(allResponses.map((item) => item.psychologicalEnergy));
-        const summary = document.getElementById('summary');
         summary.replaceChildren(
           metric('總回覆數', String(allResponses.length)),
           metric('平均身體能量', physical ? `${physical} / 10` : '—'),
@@ -196,20 +247,33 @@
         const selectedGroup = groupSelect.value;
         const items = allResponses
           .filter((item) => !selectedGroup || item.group === selectedGroup)
-          .filter((item) => !query || searchableText(item).includes(query))
+          .filter((item) => activeView !== 'expectations' || item.campExpectation.trim())
+          .filter((item) => {
+            if (!query) return true;
+            return activeView === 'expectations'
+              ? expectationSearchableText(item).includes(query)
+              : searchableText(item).includes(query);
+          })
           .slice()
           .sort((a, b) => {
             const difference = new Date(b.submittedAt) - new Date(a.submittedAt);
             return sortSelect.value === 'oldest' ? -difference : difference;
           });
 
-        document.getElementById('results-meta').textContent = `顯示 ${items.length} 筆回覆`;
+        document.getElementById('results-meta').textContent = activeView === 'expectations'
+          ? `顯示 ${items.length} 則營隊期待`
+          : `顯示 ${items.length} 筆回覆`;
         const container = document.getElementById('responses');
         if (items.length === 0) {
-          container.replaceChildren(element('p', 'state', '目前沒有符合條件的回覆。'));
+          const emptyMessage = activeView === 'expectations'
+            ? '目前沒有符合條件的營隊期待。'
+            : '目前沒有符合條件的回覆。';
+          container.replaceChildren(element('p', 'state', emptyMessage));
           return;
         }
-        container.replaceChildren(...items.map(responseCard));
+        container.replaceChildren(
+          ...items.map(activeView === 'expectations' ? expectationCard : responseCard)
+        );
       }
 
       function responseCard(item) {
@@ -229,6 +293,20 @@
           detail('營隊期待', element('p', `expectation${item.campExpectation ? '' : ' muted'}`, item.campExpectation || '未填寫'))
         );
         card.append(head, details);
+        return card;
+      }
+
+      function expectationCard(item) {
+        const card = element('article', 'card expectation-card');
+        const head = element('div', 'card-head');
+        const identity = element('div', 'identity', item.name || '未留姓名');
+        identity.append(element('span', 'group', item.group || '未填組別'));
+        identity.append(element('span', 'gender', genderLabels[item.gender] || '未填性別'));
+        head.append(identity, element('time', 'date', formatDate(item.submittedAt)));
+
+        const expectation = element('p', 'expectation-body', item.campExpectation);
+        expectation.prepend(element('span', 'expectation-mark', '“'));
+        card.append(head, expectation);
         return card;
       }
 
@@ -293,6 +371,13 @@
           item.recentMoodOther,
           item.bodySignals.map((id) => bodyLabels[id] || id).join(' '),
           item.bodySignalsOther, item.campExpectation
+        ].join(' ').toLocaleLowerCase('zh-Hant');
+      }
+
+      function expectationSearchableText(item) {
+        return [
+          item.name, item.group, genderLabels[item.gender] || item.gender,
+          item.campExpectation
         ].join(' ').toLocaleLowerCase('zh-Hant');
       }
 
