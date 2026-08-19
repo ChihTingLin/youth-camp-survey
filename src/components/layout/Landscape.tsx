@@ -22,10 +22,6 @@ export function Landscape({ progress, variant }: LandscapeProps) {
         fill="none"
       >
         <defs>
-          <linearGradient id={`${id}-sun`} x1="0" y1="0" x2="0" y2="1">
-            <stop stopColor="#F6C978" stopOpacity=".72" />
-            <stop offset="1" stopColor="#F6C978" stopOpacity="0" />
-          </linearGradient>
           <linearGradient id={`${id}-far`} x1="0" y1="0" x2="1" y2="1">
             <stop stopColor="#CAD4BD" />
             <stop offset="1" stopColor="#9EB7AD" />
@@ -43,13 +39,7 @@ export function Landscape({ progress, variant }: LandscapeProps) {
             <stop stopColor="#FFF9ED" stopOpacity=".82" />
             <stop offset="1" stopColor="#FFF4DF" />
           </linearGradient>
-          <filter id={`${id}-blur`} x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="12" />
-          </filter>
         </defs>
-
-        <circle cx="740" cy="112" r="70" fill={`url(#${id}-sun)`} filter={`url(#${id}-blur)`} />
-        <circle cx="740" cy="112" r="31" fill="#FFF8E9" />
 
         {variant === 'writing' ? (
           <g stroke="#6F9188" strokeWidth="2" strokeLinecap="round" opacity=".75">
@@ -108,6 +98,11 @@ export function Landscape({ progress, variant }: LandscapeProps) {
           <path d="M1175 560v-130c31 12 34 44 10 61 23 14 21 44-10 69Z" />
         </g>
       </svg>
+
+      <div className="absolute top-6 left-[68%] size-24 -translate-x-1/2 sm:top-8 sm:left-[62%] sm:size-32 lg:size-36">
+        <div className="absolute inset-2 rounded-full bg-camp-sun/30 blur-xl" />
+        <div className="absolute top-1/2 left-1/2 size-11 -translate-1/2 rounded-full bg-[#fff8e9] shadow-[0_0_24px_rgba(246,201,120,0.5)] sm:size-14 lg:size-16" />
+      </div>
     </div>
   )
 }
