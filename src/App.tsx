@@ -29,7 +29,7 @@ function App() {
       ? {
           eyebrow: '在出發之前，',
           title: '如果願意，和我們簡單打聲招呼',
-          description: '組別與姓名都可以自由選擇是否留下。',
+          description: '組別與性別請選擇一項；姓名可以自由選擇是否留下。',
         }
       : state.screen === 'complete'
         ? getCompletionContent(submission.status)

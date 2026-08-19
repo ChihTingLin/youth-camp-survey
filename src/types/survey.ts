@@ -1,5 +1,25 @@
-export const SURVEY_SCHEMA_VERSION = 2 as const
+export const SURVEY_SCHEMA_VERSION = 3 as const
 export const DEFAULT_SCALE_VALUE = 6
+
+export const GROUP_VALUES = [
+  '第一組',
+  '第二組',
+  '第三組',
+  '第四組',
+  '第五組',
+  '第六組',
+] as const
+
+export type GroupValue = (typeof GROUP_VALUES)[number]
+
+export const GENDER_IDS = [
+  'male',
+  'female',
+  'nonBinaryOrOther',
+  'preferNotToSay',
+] as const
+
+export type GenderId = (typeof GENDER_IDS)[number]
 
 export const QUESTION_IDS = [
   'focusAreas',
@@ -55,7 +75,8 @@ export const BODY_SIGNAL_IDS = [
 export type BodySignalId = (typeof BODY_SIGNAL_IDS)[number]
 
 export interface ParticipantProfile {
-  group: string
+  group: GroupValue | ''
+  gender: GenderId | null
   name: string
 }
 
@@ -104,12 +125,16 @@ export type AnswerChangedAction = {
   }
 }[QuestionId]
 
+export type ProfileChangedAction = {
+  [Field in keyof ParticipantProfile]: {
+    type: 'profile/changed'
+    field: Field
+    value: ParticipantProfile[Field]
+  }
+}[keyof ParticipantProfile]
+
 export type SurveyAction =
-  | {
-      type: 'profile/changed'
-      field: keyof ParticipantProfile
-      value: string
-    }
+  | ProfileChangedAction
   | AnswerChangedAction
   | { type: 'navigation/next' }
   | { type: 'navigation/back' }

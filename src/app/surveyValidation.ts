@@ -1,4 +1,6 @@
 import {
+  GENDER_IDS,
+  GROUP_VALUES,
   type QuestionId,
   type SurveyAnswers,
   type SurveyScreen,
@@ -16,8 +18,12 @@ export function validateProfile(
 ): ValidationErrors {
   const errors: ValidationErrors = {}
 
-  if (profile.group.trim().length > PROFILE_MAX_LENGTH) {
-    errors.group = `組別不可超過 ${PROFILE_MAX_LENGTH} 個字。`
+  if (!profile.group || !GROUP_VALUES.includes(profile.group)) {
+    errors.group = '請選擇組別。'
+  }
+
+  if (!profile.gender || !GENDER_IDS.includes(profile.gender)) {
+    errors.gender = '請選擇性別。'
   }
 
   if (profile.name.trim().length > PROFILE_MAX_LENGTH) {

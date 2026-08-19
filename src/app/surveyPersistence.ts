@@ -3,6 +3,8 @@ import {
   BODY_SIGNAL_IDS,
   DEFAULT_SCALE_VALUE,
   FOCUS_AREA_IDS,
+  GENDER_IDS,
+  GROUP_VALUES,
   MOOD_IDS,
   SURVEY_SCHEMA_VERSION,
   type SurveyScreen,
@@ -82,7 +84,9 @@ function parseSurveyDraft(value: unknown): SurveyState {
   const initialState = createInitialSurveyState()
   if (
     !isRecord(value) ||
-    (value.schemaVersion !== 1 && value.schemaVersion !== SURVEY_SCHEMA_VERSION)
+    (value.schemaVersion !== 1 &&
+      value.schemaVersion !== 2 &&
+      value.schemaVersion !== SURVEY_SCHEMA_VERSION)
   ) {
     return initialState
   }
@@ -109,7 +113,8 @@ function parseSurveyDraft(value: unknown): SurveyState {
       : initialState.screen,
     navigationDirection: persistedState.navigationDirection === -1 ? -1 : 1,
     profile: {
-      group: asString(profile.group),
+      group: isStringId(profile.group, GROUP_VALUES) ? profile.group : '',
+      gender: isStringId(profile.gender, GENDER_IDS) ? profile.gender : null,
       name: asString(profile.name),
     },
     answers: {

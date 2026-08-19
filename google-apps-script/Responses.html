@@ -59,6 +59,7 @@
       .card-head { display: flex; justify-content: space-between; gap: 16px; }
       .identity { font-size: 17px; font-weight: 750; }
       .group { margin-left: 7px; color: #506f5e; font-size: 13px; font-weight: 600; }
+      .gender { margin-left: 7px; color: #7a6654; font-size: 13px; font-weight: 600; }
       .date { color: #6f7b76; font-size: 12px; white-space: nowrap; }
       .details { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 15px; margin-top: 14px; }
       .details > div:last-child { grid-column: span 2; }
@@ -120,6 +121,10 @@
         busy: '忙碌', anxious: '焦慮', empty: '空虛', pressured: '壓力',
         drained: '無力', lost: '迷惘', stable: '穩定', fulfilled: '充實',
         hopeful: '期待', other: '其他'
+      };
+      const genderLabels = {
+        male: '男性', female: '女性', nonBinaryOrOther: '非二元／其他',
+        preferNotToSay: '不願透露'
       };
       const bodyLabels = {
         shoulderTension: '肩膀緊繃', chestTightness: '胸口悶',
@@ -212,6 +217,7 @@
         const head = element('div', 'card-head');
         const identity = element('div', 'identity', item.name || '未留姓名');
         identity.append(element('span', 'group', item.group || '未填組別'));
+        identity.append(element('span', 'gender', genderLabels[item.gender] || '未填性別'));
         head.append(identity, element('time', 'date', formatDate(item.submittedAt)));
 
         const details = element('div', 'details');
@@ -281,7 +287,7 @@
 
       function searchableText(item) {
         return [
-          item.name, item.group,
+          item.name, item.group, genderLabels[item.gender] || item.gender,
           item.focusAreas.map((id) => focusLabels[id] || id).join(' '),
           item.focusAreasOther, moodLabels[item.recentMood] || item.recentMood,
           item.recentMoodOther,

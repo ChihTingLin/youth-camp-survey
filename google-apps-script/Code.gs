@@ -7,6 +7,7 @@ const RESPONSE_HEADERS = [
   'submissionId',
   'schemaVersion',
   'group',
+  'gender',
   'name',
   'focusAreas',
   'focusAreasOther',
@@ -19,7 +20,24 @@ const RESPONSE_HEADERS = [
   'campExpectation',
 ];
 
-const LEGACY_RESPONSE_HEADERS = [
+const VERSION_2_RESPONSE_HEADERS = [
+  'submittedAt',
+  'submissionId',
+  'schemaVersion',
+  'group',
+  'name',
+  'focusAreas',
+  'focusAreasOther',
+  'recentMood',
+  'recentMoodOther',
+  'physicalEnergy',
+  'psychologicalEnergy',
+  'bodySignals',
+  'bodySignalsOther',
+  'campExpectation',
+];
+
+const VERSION_1_RESPONSE_HEADERS = [
   'submittedAt',
   'submissionId',
   'schemaVersion',
@@ -34,12 +52,28 @@ const LEGACY_RESPONSE_HEADERS = [
   'campExpectation',
 ];
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const PROFILE_MAX_LENGTH = 80;
 const OTHER_CHOICE_MAX_LENGTH = 300;
 const BODY_SIGNAL_OTHER_MAX_LENGTH = 300;
 const CAMP_EXPECTATION_MAX_LENGTH = 2000;
 const MIN_PUBLIC_STATISTICS_RESPONSES = 5;
+
+const GROUP_VALUES = [
+  '第一組',
+  '第二組',
+  '第三組',
+  '第四組',
+  '第五組',
+  '第六組',
+];
+
+const GENDER_IDS = [
+  'male',
+  'female',
+  'nonBinaryOrOther',
+  'preferNotToSay',
+];
 
 const FOCUS_AREA_IDS = [
   'work',
@@ -120,20 +154,33 @@ function setupResponsesSheet() {
   const headersMatch = RESPONSE_HEADERS.every(
     (header, index) => currentHeaders[index] === header,
   );
-  const legacyHeadersMatch = LEGACY_RESPONSE_HEADERS.every(
+  const version2HeadersMatch = VERSION_2_RESPONSE_HEADERS.every(
+    (header, index) => currentHeaders[index] === header,
+  );
+  const version1HeadersMatch = VERSION_1_RESPONSE_HEADERS.every(
     (header, index) => currentHeaders[index] === header,
   );
 
-  if (hasExistingHeaders && !headersMatch && !legacyHeadersMatch) {
+  if (
+    hasExistingHeaders &&
+    !headersMatch &&
+    !version2HeadersMatch &&
+    !version1HeadersMatch
+  ) {
     throw new Error(
       'Row 1 already contains different values. Clear it or verify the target worksheet before running setup again.',
     );
   }
 
-  if (legacyHeadersMatch) {
+  if (version1HeadersMatch) {
     // Preserve existing responses while adding the two new free-text columns.
     sheet.insertColumnAfter(6);
     sheet.insertColumnAfter(8);
+  }
+
+  if (version1HeadersMatch || version2HeadersMatch) {
+    // Version 3 adds gender between group and name.
+    sheet.insertColumnAfter(4);
   }
 
   sheet.setName(RESPONSES_SHEET_NAME);
@@ -148,20 +195,20 @@ function setupResponsesSheet() {
   sheet.setFrozenRows(1);
   sheet.setRowHeight(1, 36);
   sheet.getRange('A:A').setNumberFormat('yyyy-mm-dd hh:mm:ss');
-  sheet.getRange('J:K').setNumberFormat('0');
-  sheet.getRange('F:I').setWrap(true);
-  sheet.getRange('L:N').setWrap(true);
+  sheet.getRange('K:L').setNumberFormat('0');
+  sheet.getRange('G:J').setWrap(true);
+  sheet.getRange('M:O').setWrap(true);
 
   const energyValidation = SpreadsheetApp.newDataValidation()
     .requireNumberBetween(1, 10)
     .setAllowInvalid(false)
     .setHelpText('Enter an integer from 1 to 10.')
     .build();
-  sheet.getRange('J2:K').setDataValidation(energyValidation);
+  sheet.getRange('K2:L').setDataValidation(energyValidation);
 
   const widths = [
-    150, 180, 110, 130, 130, 220, 220, 150, 220, 130, 150, 240, 220,
-    360,
+    150, 180, 110, 130, 150, 130, 220, 220, 150, 220, 130, 150, 240,
+    220, 360,
   ];
   widths.forEach((width, index) => sheet.setColumnWidth(index + 1, width));
 
@@ -174,8 +221,8 @@ function setupResponsesSheet() {
  * Expected payload:
  * {
  *   submissionId: string,
- *   schemaVersion: 2,
- *   profile: { group: string, name: string },
+ *   schemaVersion: 3,
+ *   profile: { group: string, gender: string, name: string },
  *   answers: {
  *     focusAreas: { selections: string[], other: string },
  *     recentMood: { selection: string, other: string },
@@ -236,6 +283,7 @@ function doPost(event) {
         safeCell_(submission.submissionId),
         submission.schemaVersion,
         safeCell_(submission.profile.group),
+        safeCell_(submission.profile.gender),
         safeCell_(submission.profile.name),
         safeCell_(JSON.stringify(submission.answers.focusAreas.selections)),
         safeCell_(submission.answers.focusAreas.other),
@@ -270,12 +318,25 @@ function validateSubmission_(payload) {
   assertPlainObject_(payload, 'Submission');
   assertString_(payload.submissionId, 'submissionId', 1, 100);
 
-  if (payload.schemaVersion !== SCHEMA_VERSION) {
-    throw new Error(`schemaVersion must be ${SCHEMA_VERSION}.`);
+  const isLegacySubmission = payload.schemaVersion === 2;
+  if (!isLegacySubmission && payload.schemaVersion !== SCHEMA_VERSION) {
+    throw new Error(`schemaVersion must be 2 or ${SCHEMA_VERSION}.`);
   }
 
   assertPlainObject_(payload.profile, 'profile');
   assertString_(payload.profile.group, 'group', 0, PROFILE_MAX_LENGTH);
+  if (
+    !isLegacySubmission &&
+    !GROUP_VALUES.includes(payload.profile.group)
+  ) {
+    throw new Error('group is required and must contain a supported value.');
+  }
+  if (
+    !isLegacySubmission &&
+    !GENDER_IDS.includes(payload.profile.gender)
+  ) {
+    throw new Error('gender contains an unsupported value.');
+  }
   assertString_(payload.profile.name, 'name', 0, PROFILE_MAX_LENGTH);
 
   assertPlainObject_(payload.answers, 'answers');
@@ -351,6 +412,7 @@ function validateSubmission_(payload) {
     schemaVersion: payload.schemaVersion,
     profile: {
       group: payload.profile.group.trim(),
+      gender: isLegacySubmission ? '' : payload.profile.gender,
       name: payload.profile.name.trim(),
     },
     answers: {
@@ -511,16 +573,17 @@ function getSurveyResponses() {
     submissionId: String(row[1] || ''),
     schemaVersion: Number(row[2]) || SCHEMA_VERSION,
     group: String(row[3] || ''),
-    name: String(row[4] || ''),
-    focusAreas: parseStoredSelections_(row[5]),
-    focusAreasOther: String(row[6] || ''),
-    recentMood: String(row[7] || ''),
-    recentMoodOther: String(row[8] || ''),
-    physicalEnergy: Number(row[9]) || 0,
-    psychologicalEnergy: Number(row[10]) || 0,
-    bodySignals: parseStoredSelections_(row[11]),
-    bodySignalsOther: String(row[12] || ''),
-    campExpectation: String(row[13] || ''),
+    gender: String(row[4] || ''),
+    name: String(row[5] || ''),
+    focusAreas: parseStoredSelections_(row[6]),
+    focusAreasOther: String(row[7] || ''),
+    recentMood: String(row[8] || ''),
+    recentMoodOther: String(row[9] || ''),
+    physicalEnergy: Number(row[10]) || 0,
+    psychologicalEnergy: Number(row[11]) || 0,
+    bodySignals: parseStoredSelections_(row[12]),
+    bodySignalsOther: String(row[13] || ''),
+    campExpectation: String(row[14] || ''),
   }));
 
   return {
@@ -559,15 +622,15 @@ function getPublicSurveyStatistics_() {
 
   const focusAreas = countSelections_(
     FOCUS_AREA_IDS,
-    responses.map((row) => parseStoredSelections_(row[5])),
+    responses.map((row) => parseStoredSelections_(row[6])),
   );
   const recentMoods = countValues_(
     MOOD_IDS,
-    responses.map((row) => String(row[7] || '')),
+    responses.map((row) => String(row[8] || '')),
   );
   const bodySignals = countSelections_(
     BODY_SIGNAL_IDS,
-    responses.map((row) => parseStoredSelections_(row[11])),
+    responses.map((row) => parseStoredSelections_(row[12])),
   );
 
   return {
@@ -576,8 +639,8 @@ function getPublicSurveyStatistics_() {
     totalResponses,
     minimumResponses: MIN_PUBLIC_STATISTICS_RESPONSES,
     generatedAt: new Date().toISOString(),
-    averagePhysicalEnergy: averageNumbers_(responses.map((row) => row[9])),
-    averagePsychologicalEnergy: averageNumbers_(responses.map((row) => row[10])),
+    averagePhysicalEnergy: averageNumbers_(responses.map((row) => row[10])),
+    averagePsychologicalEnergy: averageNumbers_(responses.map((row) => row[11])),
     focusAreas,
     recentMoods,
     bodySignals,

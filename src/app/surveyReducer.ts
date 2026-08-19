@@ -23,6 +23,7 @@ export function createInitialSurveyState(): SurveyState {
     navigationDirection: 1,
     profile: {
       group: '',
+      gender: null,
       name: '',
     },
     answers: {
