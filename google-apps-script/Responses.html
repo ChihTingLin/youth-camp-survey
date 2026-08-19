@@ -21,7 +21,9 @@
       h1 { margin: 0; font-size: 28px; line-height: 1.25; }
       .updated { margin: 7px 0 0; color: #66736e; font-size: 12px; }
 
-      .refresh {
+      .header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+      .header-button {
         min-height: 42px;
         border: 0;
         border-radius: 999px;
@@ -30,9 +32,9 @@
         background: #506f5e;
         cursor: pointer;
       }
-      .refresh:hover { background: #31413c; }
+      .header-button:hover { background: #31413c; }
       .refresh:disabled { cursor: wait; opacity: .6; }
-      .refresh:focus-visible, input:focus-visible, select:focus-visible {
+      .header-button:focus-visible, input:focus-visible, select:focus-visible {
         outline: 2px solid #506f5e;
         outline-offset: 2px;
       }
@@ -94,6 +96,24 @@
         .details > div:last-child { grid-column: auto; }
         .responses { max-height: none; }
       }
+
+      @media print {
+        @page { size: A4; margin: 14mm; }
+        * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+        :root, body { background: white; }
+        body { color: #24332e; }
+        .app { min-height: auto; padding: 0; }
+        .header { break-after: avoid; }
+        .header-actions, .view-switch, .toolbar { display: none !important; }
+        .summary { grid-template-columns: repeat(3, 1fr); margin-top: 16px; break-inside: avoid; }
+        .metric { border-color: #ccd5cf; background: #f7f8f5; }
+        .results-meta { margin-top: 16px; }
+        .responses { display: block; max-height: none; overflow: visible; padding: 0; }
+        .card { margin-bottom: 10mm; border-color: #ccd5cf; background: white; box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
+        .expectation-card { background: #fffdf5; }
+        .details { break-inside: avoid; }
+        .state { margin-top: 20px; }
+      }
     </style>
   </head>
   <body>
@@ -104,7 +124,10 @@
           <h1>營隊問卷回覆</h1>
           <p id="updated" class="updated">正在讀取最新資料…</p>
         </div>
-        <button id="refresh" class="refresh" type="button">重新整理</button>
+        <div class="header-actions">
+          <button id="print" class="header-button" type="button">列印</button>
+          <button id="refresh" class="header-button refresh" type="button">重新整理</button>
+        </div>
       </header>
 
       <section id="summary" class="summary" aria-label="回覆摘要"></section>
@@ -153,12 +176,14 @@
       let allResponses = [];
       let activeView = 'all';
       const refreshButton = document.getElementById('refresh');
+      const printButton = document.getElementById('print');
       const searchInput = document.getElementById('search');
       const groupSelect = document.getElementById('group');
       const sortSelect = document.getElementById('sort');
       const viewButtons = [...document.querySelectorAll('[data-view]')];
 
       refreshButton.addEventListener('click', loadResponses);
+      printButton.addEventListener('click', () => window.print());
       searchInput.addEventListener('input', renderResponses);
       groupSelect.addEventListener('change', renderResponses);
       sortSelect.addEventListener('change', renderResponses);
