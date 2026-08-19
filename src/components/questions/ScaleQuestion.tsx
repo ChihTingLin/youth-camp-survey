@@ -1,4 +1,4 @@
-import { useId, type CSSProperties } from 'react'
+import { useId, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { FieldError } from './FieldError'
 
 interface ScaleQuestionProps {
@@ -30,6 +30,28 @@ export function ScaleQuestion({
 }: ScaleQuestionProps) {
   const inputId = useId()
   const progress = ((value - min) / (max - min)) * 100
+
+  const updateFromPointer = (event: ReactPointerEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const bounds = input.getBoundingClientRect()
+    const position = Math.max(0, Math.min(bounds.width, event.clientX - bounds.left))
+    const nextValue = Math.round(min + (position / bounds.width) * (max - min))
+
+    onChange(nextValue)
+  }
+
+  const startDragging = (event: ReactPointerEvent<HTMLInputElement>) => {
+    event.preventDefault()
+    event.currentTarget.focus({ preventScroll: true })
+    event.currentTarget.setPointerCapture(event.pointerId)
+    updateFromPointer(event)
+  }
+
+  const continueDragging = (event: ReactPointerEvent<HTMLInputElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      updateFromPointer(event)
+    }
+  }
 
   if (variant === 'battery') {
     return (
@@ -70,12 +92,14 @@ export function ScaleQuestion({
               <input
                 id={inputId}
                 type="range"
-                className="absolute inset-0 z-30 h-full w-full cursor-pointer opacity-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-camp-forest"
+                className="absolute inset-0 z-30 h-full w-full touch-none cursor-pointer opacity-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-camp-forest"
                 min={min}
                 max={max}
                 step={1}
                 value={value}
                 aria-label={label}
+                onPointerDown={startDragging}
+                onPointerMove={continueDragging}
                 onChange={(event) => onChange(event.target.valueAsNumber)}
               />
             </div>
