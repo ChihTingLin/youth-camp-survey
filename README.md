@@ -38,5 +38,7 @@ The Apps Script handler stores each submission in three destinations:
 After updating `google-apps-script/Code.gs`, run
 `setupFormStyleResponsesSheet` once in the Apps Script editor to create its
 formatted worksheet. Run `verifyExampleResponsesSheetAccess` once to authorize
-and verify access to the example spreadsheet without changing it. Then deploy a
-new web app version so future submissions use the updated handler.
+and verify access to the example spreadsheet without changing it. Run
+`formatReadableResponseTimestamps` once to apply the locale-aware 12-hour
+timestamp format to existing readable responses. Then deploy a new web app
+version so future submissions use the updated handler.

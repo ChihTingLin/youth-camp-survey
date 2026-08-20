@@ -5,6 +5,7 @@ const FORM_STYLE_RESPONSES_SHEET_NAME = '網站問卷回覆';
 const EXAMPLE_SPREADSHEET_ID = '1Vj7LHJ_FtCkvQTElJv_abSDPPbnP5Y6pQtX2_Bvzbas';
 const EXAMPLE_RESPONSES_SHEET_NAME = '表單回覆 1';
 const EXAMPLE_SUBMISSION_METADATA_KEY = 'youthCampSurveySubmissionId';
+const READABLE_TIMESTAMP_FORMAT = 'yyyy/m/d AM/PM h:mm:ss';
 
 const RESPONSE_HEADERS = [
   'submittedAt',
@@ -278,6 +279,7 @@ function setupFormStyleResponsesSheet() {
   const sheet = getOrCreateFormStyleResponsesSheet_(spreadsheet);
 
   assertFormStyleHeaders_(sheet);
+  sheet.getRange('A:A').setNumberFormat(READABLE_TIMESTAMP_FORMAT);
   spreadsheet.toast(
     `New website responses will be stored in ${FORM_STYLE_RESPONSES_SHEET_NAME}.`,
     'Survey setup',
@@ -295,6 +297,30 @@ function verifyExampleResponsesSheetAccess() {
 
   console.log(
     `Verified write destination: ${spreadsheet.getName()} / ${sheet.getName()}`,
+  );
+}
+
+/**
+ * Run this once to update existing readable response timestamps to a
+ * locale-aware 12-hour format, such as 2026/8/20 下午 9:52:58.
+ */
+function formatReadableResponseTimestamps() {
+  const responseSpreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const formStyleSheet = getOrCreateFormStyleResponsesSheet_(
+    responseSpreadsheet,
+  );
+  assertFormStyleHeaders_(formStyleSheet);
+
+  const exampleSpreadsheet = SpreadsheetApp.openById(EXAMPLE_SPREADSHEET_ID);
+  const exampleSheet = getExampleResponsesSheet_(exampleSpreadsheet);
+
+  formStyleSheet.getRange('A:A').setNumberFormat(READABLE_TIMESTAMP_FORMAT);
+  exampleSheet.getRange('A:A').setNumberFormat(READABLE_TIMESTAMP_FORMAT);
+
+  responseSpreadsheet.toast(
+    'Readable timestamps now use the 上午/下午 format.',
+    'Survey setup',
+    5,
   );
 }
 
@@ -600,7 +626,7 @@ function getOrCreateFormStyleResponsesSheet_(spreadsheet) {
 
     sheet.setFrozenRows(1);
     sheet.setRowHeight(1, 72);
-    sheet.getRange('A:A').setNumberFormat('yyyy/mm/dd hh:mm:ss');
+    sheet.getRange('A:A').setNumberFormat(READABLE_TIMESTAMP_FORMAT);
     sheet.getRange('C:H').setWrap(true);
 
     const widths = [160, 120, 250, 250, 220, 220, 280, 420, 180];
@@ -667,7 +693,7 @@ function appendExampleResponseIfMissing_(sheet, submission) {
 
   destination.setValues([values]);
   destination.setWrap(true);
-  destination.getCell(1, 1).setNumberFormat('yyyy/mm/dd hh:mm:ss');
+  destination.getCell(1, 1).setNumberFormat(READABLE_TIMESTAMP_FORMAT);
   destination.addDeveloperMetadata(
     EXAMPLE_SUBMISSION_METADATA_KEY,
     submission.submissionId,
@@ -703,6 +729,9 @@ function appendFormStyleResponseIfMissing_(sheet, submission) {
     ...buildReadableResponseRow_(submission),
     safeCell_(submission.submissionId),
   ]);
+  sheet
+    .getRange(sheet.getLastRow(), 1)
+    .setNumberFormat(READABLE_TIMESTAMP_FORMAT);
 
   return true;
 }
