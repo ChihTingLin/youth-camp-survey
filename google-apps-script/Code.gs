@@ -4,7 +4,7 @@ const RESPONSES_SHEET_NAME = 'Responses';
 const FORM_STYLE_RESPONSES_SHEET_NAME = '網站問卷回覆';
 const EXAMPLE_SPREADSHEET_ID = '1Vj7LHJ_FtCkvQTElJv_abSDPPbnP5Y6pQtX2_Bvzbas';
 const EXAMPLE_RESPONSES_SHEET_NAME = '表單回覆 1';
-const EXAMPLE_SUBMISSION_METADATA_KEY = 'youthCampSurveySubmissionId';
+const EXAMPLE_SUBMISSION_PROPERTY_PREFIX = 'externalSubmission:';
 const READABLE_TIMESTAMP_FORMAT = 'yyyy/m/d AM/PM h:mm:ss';
 
 const RESPONSE_HEADERS = [
@@ -79,6 +79,15 @@ const CAMP_EXPECTATION_MAX_LENGTH = 2000;
 const MIN_PUBLIC_STATISTICS_RESPONSES = 5;
 
 const GROUP_VALUES = [
+  '第1組',
+  '第2組',
+  '第3組',
+  '第4組',
+  '第5組',
+  '第6組',
+];
+
+const LEGACY_GROUP_VALUES = [
   '第一組',
   '第二組',
   '第三組',
@@ -305,19 +314,12 @@ function verifyExampleResponsesSheetAccess() {
  * locale-aware 12-hour format, such as 2026/8/20 下午 9:52:58.
  */
 function formatReadableResponseTimestamps() {
-  const responseSpreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const formStyleSheet = getOrCreateFormStyleResponsesSheet_(
-    responseSpreadsheet,
-  );
-  assertFormStyleHeaders_(formStyleSheet);
-
   const exampleSpreadsheet = SpreadsheetApp.openById(EXAMPLE_SPREADSHEET_ID);
   const exampleSheet = getExampleResponsesSheet_(exampleSpreadsheet);
 
-  formStyleSheet.getRange('A:A').setNumberFormat(READABLE_TIMESTAMP_FORMAT);
   exampleSheet.getRange('A:A').setNumberFormat(READABLE_TIMESTAMP_FORMAT);
 
-  responseSpreadsheet.toast(
+  exampleSpreadsheet.toast(
     'Readable timestamps now use the 上午/下午 format.',
     'Survey setup',
     5,
@@ -368,33 +370,13 @@ function doPost(event) {
     lock.waitLock(30000);
 
     try {
-      const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-      const sheet = spreadsheet
-        .getSheets()
-        .find((candidate) => candidate.getSheetId() === RESPONSES_SHEET_ID);
-
-      if (!sheet) {
-        throw new Error(`Could not find the worksheet with gid=${RESPONSES_SHEET_ID}.`);
-      }
-
-      assertHeaders_(sheet);
-      const duplicate = hasSubmission_(sheet, submission.submissionId);
-
-      if (!duplicate) {
-        appendNormalizedResponse_(sheet, submission);
-      }
-
-      const formStyleSheet = getOrCreateFormStyleResponsesSheet_(spreadsheet);
-      assertFormStyleHeaders_(formStyleSheet);
-      appendFormStyleResponseIfMissing_(formStyleSheet, submission);
-
       const exampleSpreadsheet = SpreadsheetApp.openById(EXAMPLE_SPREADSHEET_ID);
       const exampleSheet = getExampleResponsesSheet_(exampleSpreadsheet);
-      appendExampleResponseIfMissing_(exampleSheet, submission);
+      const appended = appendExampleResponseIfMissing_(exampleSheet, submission);
 
       return jsonResponse_({
         ok: true,
-        duplicate,
+        duplicate: !appended,
         submissionId: submission.submissionId,
       });
     } finally {
@@ -422,9 +404,10 @@ function validateSubmission_(payload) {
 
   assertPlainObject_(payload.profile, 'profile');
   assertString_(payload.profile.group, 'group', 0, PROFILE_MAX_LENGTH);
+  const normalizedGroup = normalizeGroupValue_(payload.profile.group);
   if (
     !isLegacySubmission &&
-    !GROUP_VALUES.includes(payload.profile.group)
+    !GROUP_VALUES.includes(normalizedGroup)
   ) {
     throw new Error('group is required and must contain a supported value.');
   }
@@ -513,7 +496,7 @@ function validateSubmission_(payload) {
     submissionId: payload.submissionId.trim(),
     schemaVersion: payload.schemaVersion,
     profile: {
-      group: payload.profile.group.trim(),
+      group: normalizedGroup,
       gender: isLegacySubmission ? '' : payload.profile.gender,
       name: payload.profile.name.trim(),
     },
@@ -683,27 +666,24 @@ function getExampleResponsesSheet_(spreadsheet) {
 }
 
 function appendExampleResponseIfMissing_(sheet, submission) {
-  const alreadyStored = sheet
-    .createDeveloperMetadataFinder()
-    .withKey(EXAMPLE_SUBMISSION_METADATA_KEY)
-    .withValue(submission.submissionId)
-    .find()
-    .length > 0;
-
-  if (alreadyStored) return false;
+  const properties = PropertiesService.getScriptProperties();
+  const propertyKey = `${EXAMPLE_SUBMISSION_PROPERTY_PREFIX}${submission.submissionId}`;
+  if (properties.getProperty(propertyKey)) return false;
 
   const row = sheet.getLastRow() + 1;
   const values = buildReadableResponseRow_(submission);
   const destination = sheet.getRange(row, 1, 1, values.length);
 
   destination.setValues([values]);
-  destination.setWrap(true);
-  destination.getCell(1, 1).setNumberFormat(READABLE_TIMESTAMP_FORMAT);
-  destination.addDeveloperMetadata(
-    EXAMPLE_SUBMISSION_METADATA_KEY,
-    submission.submissionId,
-    SpreadsheetApp.DeveloperMetadataVisibility.PROJECT,
-  );
+  try {
+    destination.setWrap(true);
+    destination.getCell(1, 1).setNumberFormat(READABLE_TIMESTAMP_FORMAT);
+    properties.setProperty(propertyKey, String(row));
+  } catch (error) {
+    // The response is already stored; optional formatting or retry bookkeeping
+    // must not turn a successful submission into a visible failure.
+    console.warn(error);
+  }
   return true;
 }
 
@@ -807,6 +787,12 @@ function formatEnergyBand_(value) {
 
 function normalizeHeader_(value) {
   return String(value).replace(/\s+/g, ' ').trim();
+}
+
+function normalizeGroupValue_(value) {
+  const trimmed = value.trim();
+  const legacyIndex = LEGACY_GROUP_VALUES.indexOf(trimmed);
+  return legacyIndex >= 0 ? GROUP_VALUES[legacyIndex] : trimmed;
 }
 
 function hasSubmission_(sheet, submissionId) {

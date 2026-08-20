@@ -2,12 +2,12 @@ export const SURVEY_SCHEMA_VERSION = 4 as const
 export const DEFAULT_SCALE_VALUE = 6
 
 export const GROUP_VALUES = [
-  '第一組',
-  '第二組',
-  '第三組',
-  '第四組',
-  '第五組',
-  '第六組',
+  '第1組',
+  '第2組',
+  '第3組',
+  '第4組',
+  '第5組',
+  '第6組',
 ] as const
 
 export type GroupValue = (typeof GROUP_VALUES)[number]

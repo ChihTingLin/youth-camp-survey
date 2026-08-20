@@ -49,14 +49,24 @@ export async function submitSurvey(
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
+      mode: 'no-cors',
       headers: {
-        // text/plain keeps this a CORS-simple request while the body remains JSON.
+        // Apps Script ContentService responds through a cross-origin redirect.
+        // An opaque request avoids treating its successful 302 flow as a CORS error.
         'Content-Type': 'text/plain;charset=UTF-8',
       },
       body: JSON.stringify(payload),
       redirect: 'follow',
       signal: timeoutController.signal,
     })
+
+    if (response.type === 'opaque') {
+      return {
+        ok: true,
+        duplicate: false,
+        submissionId: payload.submissionId,
+      }
+    }
 
     if (!response.ok) {
       throw new SurveySubmissionError('送出服務暫時無法使用，請稍後再試。')
