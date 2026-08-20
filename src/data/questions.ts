@@ -69,10 +69,10 @@ export const QUESTIONS = [
   },
   {
     id: 'recentMood',
-    kind: 'single-select',
+    kind: 'multi-select',
     eyebrow: '最近半年，',
     title: '您最常感受到的是？',
-    description: '選一個最貼近你最近的心情。',
+    description: '可複選。',
     required: true,
     options: [
       { id: 'busy', label: '忙碌' },

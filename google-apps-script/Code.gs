@@ -71,7 +71,7 @@ const FORM_STYLE_RESPONSE_HEADERS = [
 
 const EXAMPLE_RESPONSE_HEADERS = FORM_STYLE_RESPONSE_HEADERS.slice(0, 8);
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const PROFILE_MAX_LENGTH = 80;
 const OTHER_CHOICE_MAX_LENGTH = 300;
 const BODY_SIGNAL_OTHER_MAX_LENGTH = 300;
@@ -334,7 +334,7 @@ function formatReadableResponseTimestamps() {
  *   profile: { group: string, gender: string, name: string },
  *   answers: {
  *     focusAreas: { selections: string[], other: string },
- *     recentMood: { selection: string, other: string },
+ *     recentMood: { selections: string[], other: string },
  *     physicalEnergy: number,
  *     psychologicalEnergy: number,
  *     bodySignals: { selections: string[], other: string },
@@ -415,8 +415,9 @@ function validateSubmission_(payload) {
   assertString_(payload.submissionId, 'submissionId', 1, 100);
 
   const isLegacySubmission = payload.schemaVersion === 2;
-  if (!isLegacySubmission && payload.schemaVersion !== SCHEMA_VERSION) {
-    throw new Error(`schemaVersion must be 2 or ${SCHEMA_VERSION}.`);
+  const usesSingleMood = payload.schemaVersion === 2 || payload.schemaVersion === 3;
+  if (!usesSingleMood && payload.schemaVersion !== SCHEMA_VERSION) {
+    throw new Error(`schemaVersion must be 2, 3, or ${SCHEMA_VERSION}.`);
   }
 
   assertPlainObject_(payload.profile, 'profile');
@@ -457,9 +458,14 @@ function validateSubmission_(payload) {
   );
 
   assertPlainObject_(answers.recentMood, 'recentMood');
-  if (!MOOD_IDS.includes(answers.recentMood.selection)) {
-    throw new Error('recentMood contains an unsupported value.');
-  }
+  const recentMoods = validateSelection_(
+    usesSingleMood
+      ? [answers.recentMood.selection]
+      : answers.recentMood.selections,
+    MOOD_IDS,
+    usesSingleMood ? 'recentMood.selection' : 'recentMood.selections',
+    true,
+  );
   assertString_(
     answers.recentMood.other,
     'recentMood.other',
@@ -467,7 +473,7 @@ function validateSubmission_(payload) {
     OTHER_CHOICE_MAX_LENGTH,
   );
   assertOtherSelection_(
-    answers.recentMood.selection === 'other',
+    recentMoods.includes('other'),
     answers.recentMood.other,
     'recentMood.other',
   );
@@ -519,11 +525,10 @@ function validateSubmission_(payload) {
           : '',
       },
       recentMood: {
-        selection: answers.recentMood.selection,
-        other:
-          answers.recentMood.selection === 'other'
-            ? answers.recentMood.other.trim()
-            : '',
+        selections: recentMoods,
+        other: recentMoods.includes('other')
+          ? answers.recentMood.other.trim()
+          : '',
       },
       physicalEnergy: answers.physicalEnergy,
       psychologicalEnergy: answers.psychologicalEnergy,
@@ -712,7 +717,7 @@ function appendNormalizedResponse_(sheet, submission) {
     safeCell_(submission.profile.name),
     safeCell_(JSON.stringify(submission.answers.focusAreas.selections)),
     safeCell_(submission.answers.focusAreas.other),
-    safeCell_(submission.answers.recentMood.selection),
+    safeCell_(JSON.stringify(submission.answers.recentMood.selections)),
     safeCell_(submission.answers.recentMood.other),
     submission.answers.physicalEnergy,
     submission.answers.psychologicalEnergy,
@@ -749,7 +754,7 @@ function buildReadableResponseRow_(submission) {
     ),
     safeCell_(
       formatLabeledSelections_(
-        [submission.answers.recentMood.selection],
+        submission.answers.recentMood.selections,
         MOOD_LABELS,
         submission.answers.recentMood.other,
       ),
@@ -877,7 +882,7 @@ function getSurveyResponses() {
     name: String(row[5] || ''),
     focusAreas: parseStoredSelections_(row[6]),
     focusAreasOther: String(row[7] || ''),
-    recentMood: String(row[8] || ''),
+    recentMoods: parseStoredSelections_(row[8]),
     recentMoodOther: String(row[9] || ''),
     physicalEnergy: Number(row[10]) || 0,
     psychologicalEnergy: Number(row[11]) || 0,
@@ -924,9 +929,9 @@ function getPublicSurveyStatistics_() {
     FOCUS_AREA_IDS,
     responses.map((row) => parseStoredSelections_(row[6])),
   );
-  const recentMoods = countValues_(
+  const recentMoods = countSelections_(
     MOOD_IDS,
-    responses.map((row) => String(row[8] || '')),
+    responses.map((row) => parseStoredSelections_(row[8])),
   );
   const bodySignals = countSelections_(
     BODY_SIGNAL_IDS,
@@ -953,14 +958,6 @@ function countSelections_(allowedIds, selections) {
     [...new Set(items)].forEach((id) => {
       if (Object.prototype.hasOwnProperty.call(counts, id)) counts[id] += 1;
     });
-  });
-  return counts;
-}
-
-function countValues_(allowedIds, values) {
-  const counts = Object.fromEntries(allowedIds.map((id) => [id, 0]));
-  values.forEach((id) => {
-    if (Object.prototype.hasOwnProperty.call(counts, id)) counts[id] += 1;
   });
   return counts;
 }

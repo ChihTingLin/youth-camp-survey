@@ -44,20 +44,12 @@ export function validateQuestion<Id extends QuestionId>(
         'focusAreas',
         '請至少選擇一個項目。',
       )
-    case 'recentMood': {
-      const recentMood = answer as SurveyAnswers['recentMood']
-      if (recentMood.selection === null) {
-        return { recentMood: '請選擇一個最接近的心情。' }
-      }
-
-      if (recentMood.other.trim().length > OTHER_CHOICE_MAX_LENGTH) {
-        return { recentMood: `其他內容不可超過 ${OTHER_CHOICE_MAX_LENGTH} 個字。` }
-      }
-
-      return recentMood.selection === 'other' && recentMood.other.trim().length === 0
-        ? { recentMood: '請告訴我們「其他」是什麼。' }
-        : {}
-    }
+    case 'recentMood':
+      return validateChoiceWithOther(
+        answer as SurveyAnswers['recentMood'],
+        'recentMood',
+        '請至少選擇一個心情。',
+      )
     case 'physicalEnergy':
     case 'psychologicalEnergy':
       return isValidScaleAnswer(answer)
@@ -87,8 +79,8 @@ export function validateQuestion<Id extends QuestionId>(
 }
 
 function validateChoiceWithOther(
-  answer: SurveyAnswers['focusAreas'],
-  field: 'focusAreas',
+  answer: SurveyAnswers['focusAreas'] | SurveyAnswers['recentMood'],
+  field: 'focusAreas' | 'recentMood',
   emptyMessage: string,
 ): ValidationErrors {
   if (answer.selections.length === 0) {

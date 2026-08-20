@@ -4,7 +4,6 @@ import { PaperNote } from '../visuals/PaperNote'
 import { BodyMapQuestion } from './BodyMapQuestion'
 import { MultiSelectQuestion } from './MultiSelectQuestion'
 import { ScaleQuestion } from './ScaleQuestion'
-import { SingleSelectQuestion } from './SingleSelectQuestion'
 import { TextQuestion } from './TextQuestion'
 
 export function QuestionInteraction() {
@@ -65,16 +64,14 @@ export function QuestionInteraction() {
       )
     case 'recentMood':
       return (
-        <SingleSelectQuestion
+        <MultiSelectQuestion
           label={QUESTIONS[1].title}
           errorId="recent-mood-error"
           errorMessage={state.validationErrors.recentMood}
-          name="recent-mood"
           options={QUESTIONS[1].options}
-          layout="mood"
-          value={state.answers.recentMood.selection}
+          value={state.answers.recentMood.selections}
           otherResponse={
-            state.answers.recentMood.selection === 'other'
+            state.answers.recentMood.selections.includes('other')
               ? {
                   maxLength: 300,
                   value: state.answers.recentMood.other,
@@ -87,14 +84,15 @@ export function QuestionInteraction() {
                 }
               : undefined
           }
-          onChange={(selection) =>
+          onChange={(selections) =>
             dispatch({
               type: 'answer/changed',
               questionId: 'recentMood',
               value: {
-                selection,
-                other:
-                  selection === 'other' ? state.answers.recentMood.other : '',
+                selections,
+                other: selections.includes('other')
+                  ? state.answers.recentMood.other
+                  : '',
               },
             })
           }

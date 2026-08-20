@@ -1,4 +1,4 @@
-export const SURVEY_SCHEMA_VERSION = 3 as const
+export const SURVEY_SCHEMA_VERSION = 4 as const
 export const DEFAULT_SCALE_VALUE = 6
 
 export const GROUP_VALUES = [
@@ -86,7 +86,7 @@ export interface FocusAreasAnswer {
 }
 
 export interface RecentMoodAnswer {
-  selection: MoodId | null
+  selections: MoodId[]
   other: string
 }
 

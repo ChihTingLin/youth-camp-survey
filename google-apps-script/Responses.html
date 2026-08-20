@@ -312,7 +312,7 @@
         const details = element('div', 'details');
         details.append(
           detail('關注的事情', chips(withOther(item.focusAreas, focusLabels, item.focusAreasOther))),
-          detail('最近感受', chips(withOther([item.recentMood], moodLabels, item.recentMoodOther))),
+          detail('最近感受', chips(withOther(item.recentMoods, moodLabels, item.recentMoodOther))),
           energyDetail(item),
           detail('身體狀態', chips(withOther(item.bodySignals, bodyLabels, item.bodySignalsOther))),
           detail('營隊期待', element('p', `expectation${item.campExpectation ? '' : ' muted'}`, item.campExpectation || '未填寫'))
@@ -392,7 +392,8 @@
         return [
           item.name, item.group, genderLabels[item.gender] || item.gender,
           item.focusAreas.map((id) => focusLabels[id] || id).join(' '),
-          item.focusAreasOther, moodLabels[item.recentMood] || item.recentMood,
+          item.focusAreasOther,
+          item.recentMoods.map((id) => moodLabels[id] || id).join(' '),
           item.recentMoodOther,
           item.bodySignals.map((id) => bodyLabels[id] || id).join(' '),
           item.bodySignalsOther, item.campExpectation

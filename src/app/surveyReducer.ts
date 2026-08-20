@@ -32,7 +32,7 @@ export function createInitialSurveyState(): SurveyState {
         other: '',
       },
       recentMood: {
-        selection: null,
+        selections: [],
         other: '',
       },
       physicalEnergy: DEFAULT_SCALE_VALUE,

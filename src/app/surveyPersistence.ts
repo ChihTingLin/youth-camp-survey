@@ -86,6 +86,7 @@ function parseSurveyDraft(value: unknown): SurveyState {
     !isRecord(value) ||
     (value.schemaVersion !== 1 &&
       value.schemaVersion !== 2 &&
+      value.schemaVersion !== 3 &&
       value.schemaVersion !== SURVEY_SCHEMA_VERSION)
   ) {
     return initialState
@@ -126,12 +127,10 @@ function parseSurveyDraft(value: unknown): SurveyState {
         other: asString(focusAreas?.other),
       },
       recentMood: {
-        selection: isStringId(
-          recentMood?.selection ?? answers.recentMood,
+        selections: filterStringIds(
+          recentMood?.selections ?? legacyArray(recentMood?.selection ?? answers.recentMood),
           MOOD_IDS,
-        )
-          ? (recentMood?.selection ?? answers.recentMood) as SurveyState['answers']['recentMood']['selection']
-          : null,
+        ),
         other: asString(recentMood?.other),
       },
       physicalEnergy: asScaleAnswer(answers.physicalEnergy),
@@ -177,4 +176,8 @@ function filterStringIds<const Id extends string>(
 ): Id[] {
   if (!Array.isArray(value)) return []
   return value.filter((item): item is Id => isStringId(item, allowedIds))
+}
+
+function legacyArray(value: unknown): unknown[] {
+  return typeof value === 'string' ? [value] : []
 }
