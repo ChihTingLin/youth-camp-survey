@@ -24,8 +24,14 @@ npm run lint
 npm run build
 ```
 
-The production output is written to `dist/` and uses relative asset paths so it
-can be hosted from a GitHub Pages project subdirectory.
+The production output is written to `dist/` and uses domain-root asset paths for
+the GitHub Pages custom domain: `https://youngonejourney.tw/`.
+
+The Pages publishing source must be **GitHub Actions**, and the repository's
+**Settings → Pages → Custom domain** value must be `youngonejourney.tw`.
+Because this repository deploys through a custom Pages workflow, a `CNAME` file
+is not required. DNS and HTTPS availability are managed by GitHub Pages after
+the custom domain is saved and its DNS records finish propagating.
 
 ## Google Apps Script
 

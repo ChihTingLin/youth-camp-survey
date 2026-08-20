@@ -36,6 +36,13 @@ jobs:
         env:
           VITE_GOOGLE_SCRIPT_URL: https://script.google.com/macros/s/AKfycbwVxTbqSBGLomgp_-wNgHu-M4MmfETKcVYBawcMKwakvdIqPQfNFtOnEf4Ek6Qyua23/exec
 
+      - name: Verify domain-root artifact paths
+        run: |
+          grep -q 'src="/assets/' dist/index.html
+          grep -q 'href="/assets/' dist/index.html
+          grep -q 'href="/favicon.svg"' dist/index.html
+          test -f dist/favicon.svg
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
         with:
