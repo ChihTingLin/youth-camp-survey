@@ -1,6 +1,8 @@
 const SPREADSHEET_ID = '1_1xazCEYAIFTRQo6t5INUjTlqNlkWuLWLR2llry7u8w';
 const RESPONSES_SHEET_ID = 0;
 const RESPONSES_SHEET_NAME = 'Responses';
+const FORM_STYLE_SPREADSHEET_ID = '1Vj7LHJ_FtCkvQTElJv_abSDPPbnP5Y6pQtX2_Bvzbas';
+const FORM_STYLE_RESPONSES_SHEET_NAME = '網站問卷回覆';
 
 const RESPONSE_HEADERS = [
   'submittedAt',
@@ -50,6 +52,18 @@ const VERSION_1_RESPONSE_HEADERS = [
   'bodySignals',
   'bodySignalsOther',
   'campExpectation',
+];
+
+const FORM_STYLE_RESPONSE_HEADERS = [
+  '時間戳記',
+  '你的組別是?',
+  '1. 近半年最常佔據我腦海的是？',
+  '2. 最近半年，我最常感受到的是？',
+  '3. 過去2周，我的身體能量是？\n(1分=完全耗盡, 10分=精神飽滿)',
+  '4. 過去2周，我的心理能量是？\n(1分=快撐不住, 10分=很穩定)',
+  '5. 我觀察自己總體最明顯的身體狀態是？',
+  '課程期待大聲說 -\n你期待營隊協助你解決什麼問題?',
+  'submissionId',
 ];
 
 const SCHEMA_VERSION = 3;
@@ -110,6 +124,42 @@ const BODY_SIGNAL_IDS = [
   'relaxed',
   'noSpecialFeeling',
 ];
+
+const FOCUS_AREA_LABELS = {
+  work: '工作',
+  finances: '經濟',
+  family: '家庭',
+  relationships: '感情',
+  health: '健康',
+  futureDirection: '未來方向',
+  selfGrowth: '自我成長',
+  other: '其他',
+};
+
+const MOOD_LABELS = {
+  busy: '忙碌',
+  anxious: '焦慮',
+  empty: '空虛',
+  pressured: '壓力',
+  drained: '無力',
+  lost: '迷惘',
+  stable: '穩定',
+  fulfilled: '充實',
+  hopeful: '期待',
+  other: '其他',
+};
+
+const BODY_SIGNAL_LABELS = {
+  shoulderTension: '肩膀緊',
+  chestTightness: '胸口悶',
+  stomachDiscomfort: '胃不舒服',
+  headache: '頭痛',
+  poorSleep: '睡不好',
+  fatigue: '疲憊',
+  mentalTension: '思緒緊繃',
+  relaxed: '輕鬆自在',
+  noSpecialFeeling: '沒有特別感覺',
+};
 
 /** Returns aggregate-only statistics for the participant-facing dashboard. */
 function doGet(event) {
@@ -216,6 +266,22 @@ function setupResponsesSheet() {
 }
 
 /**
+ * Creates the human-readable response tab in the reference spreadsheet.
+ * The final submissionId column is hidden and used only for retry-safe deduplication.
+ */
+function setupFormStyleResponsesSheet() {
+  const spreadsheet = SpreadsheetApp.openById(FORM_STYLE_SPREADSHEET_ID);
+  const sheet = getOrCreateFormStyleResponsesSheet_(spreadsheet);
+
+  assertFormStyleHeaders_(sheet);
+  spreadsheet.toast(
+    `New website responses will be stored in ${FORM_STYLE_RESPONSES_SHEET_NAME}.`,
+    'Survey setup',
+    5,
+  );
+}
+
+/**
  * Accepts a JSON survey submission and appends it to the response worksheet.
  *
  * Expected payload:
@@ -269,8 +335,16 @@ function doPost(event) {
       }
 
       assertHeaders_(sheet);
+      const formStyleSpreadsheet = SpreadsheetApp.openById(
+        FORM_STYLE_SPREADSHEET_ID,
+      );
+      const formStyleSheet = getOrCreateFormStyleResponsesSheet_(
+        formStyleSpreadsheet,
+      );
+      assertFormStyleHeaders_(formStyleSheet);
 
       if (hasSubmission_(sheet, submission.submissionId)) {
+        appendFormStyleResponseIfMissing_(formStyleSheet, submission);
         return jsonResponse_({
           ok: true,
           duplicate: true,
@@ -278,6 +352,7 @@ function doPost(event) {
         });
       }
 
+      appendFormStyleResponseIfMissing_(formStyleSheet, submission);
       sheet.appendRow([
         new Date(),
         safeCell_(submission.submissionId),
@@ -502,6 +577,127 @@ function assertHeaders_(sheet) {
   if (!headersMatch) {
     throw new Error('The response worksheet headers do not match the expected schema.');
   }
+}
+
+function getOrCreateFormStyleResponsesSheet_(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName(FORM_STYLE_RESPONSES_SHEET_NAME);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(FORM_STYLE_RESPONSES_SHEET_NAME);
+  }
+
+  const headerRange = sheet.getRange(
+    1,
+    1,
+    1,
+    FORM_STYLE_RESPONSE_HEADERS.length,
+  );
+  const currentHeaders = headerRange.getDisplayValues()[0];
+  const hasHeaders = currentHeaders.some((value) => value.trim() !== '');
+
+  if (!hasHeaders) {
+    headerRange.setValues([FORM_STYLE_RESPONSE_HEADERS]);
+    headerRange
+      .setBackground('#31413c')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setHorizontalAlignment('center')
+      .setWrap(true);
+
+    sheet.setFrozenRows(1);
+    sheet.setRowHeight(1, 72);
+    sheet.getRange('A:A').setNumberFormat('yyyy/mm/dd hh:mm:ss');
+    sheet.getRange('C:H').setWrap(true);
+
+    const widths = [160, 120, 250, 250, 220, 220, 280, 420, 180];
+    widths.forEach((width, index) => sheet.setColumnWidth(index + 1, width));
+  }
+
+  sheet.hideColumns(FORM_STYLE_RESPONSE_HEADERS.length);
+  return sheet;
+}
+
+function assertFormStyleHeaders_(sheet) {
+  const actualHeaders = sheet
+    .getRange(1, 1, 1, FORM_STYLE_RESPONSE_HEADERS.length)
+    .getDisplayValues()[0];
+  const headersMatch = FORM_STYLE_RESPONSE_HEADERS.every(
+    (header, index) => actualHeaders[index] === header,
+  );
+
+  if (!headersMatch) {
+    throw new Error(
+      `The ${FORM_STYLE_RESPONSES_SHEET_NAME} worksheet headers do not match the expected schema.`,
+    );
+  }
+}
+
+function appendFormStyleResponseIfMissing_(sheet, submission) {
+  if (hasFormStyleSubmission_(sheet, submission.submissionId)) return false;
+
+  sheet.appendRow([
+    new Date(),
+    safeCell_(submission.profile.group),
+    safeCell_(
+      formatLabeledSelections_(
+        submission.answers.focusAreas.selections,
+        FOCUS_AREA_LABELS,
+        submission.answers.focusAreas.other,
+      ),
+    ),
+    safeCell_(
+      formatLabeledSelections_(
+        [submission.answers.recentMood.selection],
+        MOOD_LABELS,
+        submission.answers.recentMood.other,
+      ),
+    ),
+    formatEnergyBand_(submission.answers.physicalEnergy),
+    formatEnergyBand_(submission.answers.psychologicalEnergy),
+    safeCell_(
+      formatLabeledSelections_(
+        submission.answers.bodySignals.selections,
+        BODY_SIGNAL_LABELS,
+        submission.answers.bodySignals.other,
+      ),
+    ),
+    safeCell_(submission.answers.campExpectation),
+    safeCell_(submission.submissionId),
+  ]);
+
+  return true;
+}
+
+function hasFormStyleSubmission_(sheet, submissionId) {
+  if (sheet.getLastRow() < 2) return false;
+
+  return Boolean(
+    sheet
+      .getRange(
+        2,
+        FORM_STYLE_RESPONSE_HEADERS.length,
+        sheet.getLastRow() - 1,
+        1,
+      )
+      .createTextFinder(submissionId)
+      .matchEntireCell(true)
+      .findNext(),
+  );
+}
+
+function formatLabeledSelections_(ids, labels, other) {
+  const values = ids
+    .filter((id) => id && !(id === 'other' && other))
+    .map((id) => labels[id] || id);
+
+  if (other) values.push(`其他：${other}`);
+  return values.join(', ');
+}
+
+function formatEnergyBand_(value) {
+  if (value <= 3) return '平均1-3分';
+  if (value <= 6) return '平均4-6分';
+  if (value <= 8) return '平均7-8分';
+  return '平均9-10分';
 }
 
 function hasSubmission_(sheet, submissionId) {
