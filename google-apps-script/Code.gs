@@ -838,44 +838,10 @@ function showResponsesDashboard() {
 
 /**
  * Called only from the Sheet-hosted dashboard through google.script.run.
- * Dates and ranges are normalized to browser-safe plain objects.
+ * The external form-style rows are normalized to dashboard-safe objects.
  */
 function getSurveyResponses() {
-  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = spreadsheet
-    .getSheets()
-    .find((candidate) => candidate.getSheetId() === RESPONSES_SHEET_ID);
-
-  if (!sheet) {
-    throw new Error(`Could not find the worksheet with gid=${RESPONSES_SHEET_ID}.`);
-  }
-
-  assertHeaders_(sheet);
-  const responseCount = Math.max(0, sheet.getLastRow() - 1);
-  if (responseCount === 0) {
-    return { generatedAt: new Date().toISOString(), responses: [] };
-  }
-
-  const rows = sheet
-    .getRange(2, 1, responseCount, RESPONSE_HEADERS.length)
-    .getValues();
-  const responses = rows.map((row) => ({
-    submittedAt: asIsoDate_(row[0]),
-    submissionId: String(row[1] || ''),
-    schemaVersion: Number(row[2]) || SCHEMA_VERSION,
-    group: String(row[3] || ''),
-    gender: String(row[4] || ''),
-    name: String(row[5] || ''),
-    focusAreas: parseStoredSelections_(row[6]),
-    focusAreasOther: String(row[7] || ''),
-    recentMoods: parseStoredSelections_(row[8]),
-    recentMoodOther: String(row[9] || ''),
-    physicalEnergy: Number(row[10]) || 0,
-    psychologicalEnergy: Number(row[11]) || 0,
-    bodySignals: parseStoredSelections_(row[12]),
-    bodySignalsOther: String(row[13] || ''),
-    campExpectation: String(row[14] || ''),
-  }));
+  const responses = getExternalSurveyResponses_();
 
   return {
     generatedAt: new Date().toISOString(),
@@ -884,21 +850,7 @@ function getSurveyResponses() {
 }
 
 function getPublicSurveyStatistics_() {
-  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = spreadsheet
-    .getSheets()
-    .find((candidate) => candidate.getSheetId() === RESPONSES_SHEET_ID);
-
-  if (!sheet) {
-    throw new Error(`Could not find the worksheet with gid=${RESPONSES_SHEET_ID}.`);
-  }
-
-  assertHeaders_(sheet);
-  const rowCount = Math.max(0, sheet.getLastRow() - 1);
-  const rows = rowCount === 0
-    ? []
-    : sheet.getRange(2, 1, rowCount, RESPONSE_HEADERS.length).getValues();
-  const responses = rows.filter((row) => String(row[1] || '').trim() !== '');
+  const responses = getExternalSurveyResponses_();
   const totalResponses = responses.length;
 
   if (totalResponses < MIN_PUBLIC_STATISTICS_RESPONSES) {
@@ -913,15 +865,15 @@ function getPublicSurveyStatistics_() {
 
   const focusAreas = countSelections_(
     FOCUS_AREA_IDS,
-    responses.map((row) => parseStoredSelections_(row[6])),
+    responses.map((response) => response.focusAreas),
   );
   const recentMoods = countSelections_(
     MOOD_IDS,
-    responses.map((row) => parseStoredSelections_(row[8])),
+    responses.map((response) => response.recentMoods),
   );
   const bodySignals = countSelections_(
     BODY_SIGNAL_IDS,
-    responses.map((row) => parseStoredSelections_(row[12])),
+    responses.map((response) => response.bodySignals),
   );
 
   return {
@@ -930,12 +882,105 @@ function getPublicSurveyStatistics_() {
     totalResponses,
     minimumResponses: MIN_PUBLIC_STATISTICS_RESPONSES,
     generatedAt: new Date().toISOString(),
-    averagePhysicalEnergy: averageNumbers_(responses.map((row) => row[10])),
-    averagePsychologicalEnergy: averageNumbers_(responses.map((row) => row[11])),
+    averagePhysicalEnergy: averageNumbers_(
+      responses.map((response) => response.physicalEnergy),
+    ),
+    averagePsychologicalEnergy: averageNumbers_(
+      responses.map((response) => response.psychologicalEnergy),
+    ),
     focusAreas,
     recentMoods,
     bodySignals,
   };
+}
+
+function getExternalSurveyResponses_() {
+  const spreadsheet = SpreadsheetApp.openById(EXAMPLE_SPREADSHEET_ID);
+  const sheet = getExampleResponsesSheet_(spreadsheet);
+  const rowCount = Math.max(0, sheet.getLastRow() - 1);
+  if (rowCount === 0) return [];
+
+  const rows = sheet
+    .getRange(2, 1, rowCount, EXAMPLE_RESPONSE_HEADERS.length)
+    .getValues();
+  const responses = [];
+
+  rows.forEach((row, index) => {
+    if (!row.some((value) => String(value).trim() !== '')) return;
+
+    const focusAreas = parseReadableSelections_(row[2], FOCUS_AREA_LABELS);
+    const recentMoods = parseReadableSelections_(row[3], MOOD_LABELS);
+    const bodySignals = parseReadableSelections_(row[6], BODY_SIGNAL_LABELS);
+
+    responses.push({
+      submittedAt: asIsoDate_(row[0]),
+      submissionId: `external-row-${index + 2}`,
+      schemaVersion: SCHEMA_VERSION,
+      group: normalizeGroupValue_(String(row[1] || '')),
+      gender: '',
+      name: '',
+      focusAreas: focusAreas.selections,
+      focusAreasOther: focusAreas.other,
+      recentMoods: recentMoods.selections,
+      recentMoodOther: recentMoods.other,
+      physicalEnergy: parseEnergyValue_(row[4]),
+      psychologicalEnergy: parseEnergyValue_(row[5]),
+      bodySignals: bodySignals.selections,
+      bodySignalsOther: bodySignals.other,
+      campExpectation: String(row[7] || ''),
+    });
+  });
+
+  return responses;
+}
+
+function parseReadableSelections_(value, labels) {
+  const labelToId = Object.fromEntries(
+    Object.entries(labels).map(([id, label]) => [label, id]),
+  );
+  const selections = [];
+  const otherParts = [];
+  let readingOther = false;
+
+  String(value || '')
+    .split(/\s*[,，、]\s*/)
+    .filter(Boolean)
+    .forEach((item) => {
+      const otherMatch = item.match(/^其他[:：]\s*(.*)$/);
+      if (otherMatch) {
+        readingOther = true;
+        selections.push('other');
+        if (otherMatch[1]) otherParts.push(otherMatch[1]);
+        return;
+      }
+
+      if (readingOther) {
+        otherParts.push(item);
+        return;
+      }
+
+      const id = labelToId[item];
+      if (id) selections.push(id);
+    });
+
+  return {
+    selections: [...new Set(selections)],
+    other: otherParts.join(', '),
+  };
+}
+
+function parseEnergyValue_(value) {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric >= 1 && numeric <= 10) {
+    return numeric;
+  }
+
+  const range = String(value || '').match(/(\d+(?:\.\d+)?)\D*[-–~～至]\D*(\d+(?:\.\d+)?)/);
+  if (!range) return 0;
+
+  const minimum = Number(range[1]);
+  const maximum = Number(range[2]);
+  return Math.round(((minimum + maximum) / 2) * 10) / 10;
 }
 
 function countSelections_(allowedIds, selections) {
@@ -954,21 +999,6 @@ function averageNumbers_(values) {
     .filter((value) => Number.isFinite(value) && value >= 1 && value <= 10);
   if (valid.length === 0) return null;
   return Math.round((valid.reduce((sum, value) => sum + value, 0) / valid.length) * 10) / 10;
-}
-
-function parseStoredSelections_(value) {
-  if (Array.isArray(value)) return value.map(String);
-  if (typeof value !== 'string' || value.trim() === '') return [];
-
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch (error) {
-    return value
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
 }
 
 function asIsoDate_(value) {

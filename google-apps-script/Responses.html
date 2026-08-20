@@ -304,9 +304,7 @@
       function responseCard(item) {
         const card = element('article', 'card');
         const head = element('div', 'card-head');
-        const identity = element('div', 'identity', item.name || '未留姓名');
-        identity.append(element('span', 'group', item.group || '未填組別'));
-        identity.append(element('span', 'gender', genderLabels[item.gender] || '未填性別'));
+        const identity = responseIdentity(item);
         head.append(identity, element('time', 'date', formatDate(item.submittedAt)));
 
         const details = element('div', 'details');
@@ -324,15 +322,24 @@
       function expectationCard(item) {
         const card = element('article', 'card expectation-card');
         const head = element('div', 'card-head');
-        const identity = element('div', 'identity', item.name || '未留姓名');
-        identity.append(element('span', 'group', item.group || '未填組別'));
-        identity.append(element('span', 'gender', genderLabels[item.gender] || '未填性別'));
+        const identity = responseIdentity(item);
         head.append(identity, element('time', 'date', formatDate(item.submittedAt)));
 
         const expectation = element('p', 'expectation-body', item.campExpectation);
         expectation.prepend(element('span', 'expectation-mark', '“'));
         card.append(head, expectation);
         return card;
+      }
+
+      function responseIdentity(item) {
+        const identity = element('div', 'identity', item.name || item.group || '匿名回覆');
+        if (item.name && item.group) {
+          identity.append(element('span', 'group', item.group));
+        }
+        if (item.gender) {
+          identity.append(element('span', 'gender', genderLabels[item.gender] || item.gender));
+        }
+        return identity;
       }
 
       function energyDetail(item) {

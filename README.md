@@ -30,9 +30,9 @@ can be hosted from a GitHub Pages project subdirectory.
 ## Google Apps Script
 
 The Apps Script handler stores each submission only in the existing
-`表單回覆 1` worksheet in the authorized external spreadsheet. The
-normalized `Responses` worksheet remains available for the existing dashboard
-and statistics, but new submissions are not written to it.
+`表單回覆 1` worksheet in the authorized external spreadsheet. That
+worksheet is also the source for the private dashboard and public aggregate
+statistics.
 
 After updating `google-apps-script/Code.gs`, run
 `verifyExampleResponsesSheetAccess` once to authorize and verify access to the
