@@ -2,6 +2,9 @@ const SPREADSHEET_ID = '1_1xazCEYAIFTRQo6t5INUjTlqNlkWuLWLR2llry7u8w';
 const RESPONSES_SHEET_ID = 0;
 const RESPONSES_SHEET_NAME = 'Responses';
 const FORM_STYLE_RESPONSES_SHEET_NAME = '網站問卷回覆';
+const EXAMPLE_SPREADSHEET_ID = '1Vj7LHJ_FtCkvQTElJv_abSDPPbnP5Y6pQtX2_Bvzbas';
+const EXAMPLE_RESPONSES_SHEET_NAME = '表單回覆 1';
+const EXAMPLE_SUBMISSION_METADATA_KEY = 'youthCampSurveySubmissionId';
 
 const RESPONSE_HEADERS = [
   'submittedAt',
@@ -64,6 +67,8 @@ const FORM_STYLE_RESPONSE_HEADERS = [
   '課程期待大聲說 -\n你期待營隊協助你解決什麼問題?',
   'submissionId',
 ];
+
+const EXAMPLE_RESPONSE_HEADERS = FORM_STYLE_RESPONSE_HEADERS.slice(0, 8);
 
 const SCHEMA_VERSION = 3;
 const PROFILE_MAX_LENGTH = 80;
@@ -281,6 +286,19 @@ function setupFormStyleResponsesSheet() {
 }
 
 /**
+ * Run this once before deployment to confirm that the executing account can
+ * access the existing example response tab. This function does not modify it.
+ */
+function verifyExampleResponsesSheetAccess() {
+  const spreadsheet = SpreadsheetApp.openById(EXAMPLE_SPREADSHEET_ID);
+  const sheet = getExampleResponsesSheet_(spreadsheet);
+
+  console.log(
+    `Verified write destination: ${spreadsheet.getName()} / ${sheet.getName()}`,
+  );
+}
+
+/**
  * Accepts a JSON survey submission and appends it to the response worksheet.
  *
  * Expected payload:
@@ -336,6 +354,10 @@ function doPost(event) {
       assertHeaders_(sheet);
       const formStyleSheet = getOrCreateFormStyleResponsesSheet_(spreadsheet);
       assertFormStyleHeaders_(formStyleSheet);
+      const exampleSpreadsheet = SpreadsheetApp.openById(EXAMPLE_SPREADSHEET_ID);
+      const exampleSheet = getExampleResponsesSheet_(exampleSpreadsheet);
+
+      appendExampleResponseIfMissing_(exampleSheet, submission);
 
       if (hasSubmission_(sheet, submission.submissionId)) {
         appendFormStyleResponseIfMissing_(formStyleSheet, submission);
@@ -625,10 +647,69 @@ function assertFormStyleHeaders_(sheet) {
   }
 }
 
+function getExampleResponsesSheet_(spreadsheet) {
+  const sheet = spreadsheet.getSheetByName(EXAMPLE_RESPONSES_SHEET_NAME);
+  if (!sheet) {
+    throw new Error(
+      `Could not find the ${EXAMPLE_RESPONSES_SHEET_NAME} worksheet in the example spreadsheet.`,
+    );
+  }
+
+  const actualHeaders = sheet
+    .getRange(1, 1, 1, EXAMPLE_RESPONSE_HEADERS.length)
+    .getDisplayValues()[0];
+  const headersMatch = EXAMPLE_RESPONSE_HEADERS.every(
+    (header, index) =>
+      normalizeHeader_(actualHeaders[index]) === normalizeHeader_(header),
+  );
+
+  if (!headersMatch) {
+    throw new Error(
+      `The ${EXAMPLE_RESPONSES_SHEET_NAME} worksheet headers do not match the expected schema.`,
+    );
+  }
+
+  return sheet;
+}
+
+function appendExampleResponseIfMissing_(sheet, submission) {
+  const alreadyStored = sheet
+    .createDeveloperMetadataFinder()
+    .withKey(EXAMPLE_SUBMISSION_METADATA_KEY)
+    .withValue(submission.submissionId)
+    .find()
+    .length > 0;
+
+  if (alreadyStored) return false;
+
+  const row = sheet.getLastRow() + 1;
+  const values = buildReadableResponseRow_(submission);
+  const destination = sheet.getRange(row, 1, 1, values.length);
+
+  destination.setValues([values]);
+  destination.setWrap(true);
+  destination.getCell(1, 1).setNumberFormat('yyyy/mm/dd hh:mm:ss');
+  destination.addDeveloperMetadata(
+    EXAMPLE_SUBMISSION_METADATA_KEY,
+    submission.submissionId,
+    SpreadsheetApp.DeveloperMetadataVisibility.PROJECT,
+  );
+  return true;
+}
+
 function appendFormStyleResponseIfMissing_(sheet, submission) {
   if (hasFormStyleSubmission_(sheet, submission.submissionId)) return false;
 
   sheet.appendRow([
+    ...buildReadableResponseRow_(submission),
+    safeCell_(submission.submissionId),
+  ]);
+
+  return true;
+}
+
+function buildReadableResponseRow_(submission) {
+  return [
     new Date(),
     safeCell_(submission.profile.group),
     safeCell_(
@@ -655,10 +736,7 @@ function appendFormStyleResponseIfMissing_(sheet, submission) {
       ),
     ),
     safeCell_(submission.answers.campExpectation),
-    safeCell_(submission.submissionId),
-  ]);
-
-  return true;
+  ];
 }
 
 function hasFormStyleSubmission_(sheet, submissionId) {
@@ -692,6 +770,10 @@ function formatEnergyBand_(value) {
   if (value <= 6) return '平均4-6分';
   if (value <= 8) return '平均7-8分';
   return '平均9-10分';
+}
+
+function normalizeHeader_(value) {
+  return String(value).replace(/\s+/g, ' ').trim();
 }
 
 function hasSubmission_(sheet, submissionId) {
