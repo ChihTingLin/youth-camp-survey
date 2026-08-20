@@ -352,44 +352,23 @@ function doPost(event) {
       }
 
       assertHeaders_(sheet);
-      const formStyleSheet = getOrCreateFormStyleResponsesSheet_(spreadsheet);
-      assertFormStyleHeaders_(formStyleSheet);
-      const exampleSpreadsheet = SpreadsheetApp.openById(EXAMPLE_SPREADSHEET_ID);
-      const exampleSheet = getExampleResponsesSheet_(exampleSpreadsheet);
+      const duplicate = hasSubmission_(sheet, submission.submissionId);
 
-      appendExampleResponseIfMissing_(exampleSheet, submission);
-
-      if (hasSubmission_(sheet, submission.submissionId)) {
-        appendFormStyleResponseIfMissing_(formStyleSheet, submission);
-        return jsonResponse_({
-          ok: true,
-          duplicate: true,
-          submissionId: submission.submissionId,
-        });
+      if (!duplicate) {
+        appendNormalizedResponse_(sheet, submission);
       }
 
+      const formStyleSheet = getOrCreateFormStyleResponsesSheet_(spreadsheet);
+      assertFormStyleHeaders_(formStyleSheet);
       appendFormStyleResponseIfMissing_(formStyleSheet, submission);
-      sheet.appendRow([
-        new Date(),
-        safeCell_(submission.submissionId),
-        submission.schemaVersion,
-        safeCell_(submission.profile.group),
-        safeCell_(submission.profile.gender),
-        safeCell_(submission.profile.name),
-        safeCell_(JSON.stringify(submission.answers.focusAreas.selections)),
-        safeCell_(submission.answers.focusAreas.other),
-        safeCell_(submission.answers.recentMood.selection),
-        safeCell_(submission.answers.recentMood.other),
-        submission.answers.physicalEnergy,
-        submission.answers.psychologicalEnergy,
-        safeCell_(JSON.stringify(submission.answers.bodySignals.selections)),
-        safeCell_(submission.answers.bodySignals.other),
-        safeCell_(submission.answers.campExpectation),
-      ]);
+
+      const exampleSpreadsheet = SpreadsheetApp.openById(EXAMPLE_SPREADSHEET_ID);
+      const exampleSheet = getExampleResponsesSheet_(exampleSpreadsheet);
+      appendExampleResponseIfMissing_(exampleSheet, submission);
 
       return jsonResponse_({
         ok: true,
-        duplicate: false,
+        duplicate,
         submissionId: submission.submissionId,
       });
     } finally {
@@ -695,6 +674,26 @@ function appendExampleResponseIfMissing_(sheet, submission) {
     SpreadsheetApp.DeveloperMetadataVisibility.PROJECT,
   );
   return true;
+}
+
+function appendNormalizedResponse_(sheet, submission) {
+  sheet.appendRow([
+    new Date(),
+    safeCell_(submission.submissionId),
+    submission.schemaVersion,
+    safeCell_(submission.profile.group),
+    safeCell_(submission.profile.gender),
+    safeCell_(submission.profile.name),
+    safeCell_(JSON.stringify(submission.answers.focusAreas.selections)),
+    safeCell_(submission.answers.focusAreas.other),
+    safeCell_(submission.answers.recentMood.selection),
+    safeCell_(submission.answers.recentMood.other),
+    submission.answers.physicalEnergy,
+    submission.answers.psychologicalEnergy,
+    safeCell_(JSON.stringify(submission.answers.bodySignals.selections)),
+    safeCell_(submission.answers.bodySignals.other),
+    safeCell_(submission.answers.campExpectation),
+  ]);
 }
 
 function appendFormStyleResponseIfMissing_(sheet, submission) {
