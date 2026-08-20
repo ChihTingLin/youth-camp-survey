@@ -1,7 +1,6 @@
 const SPREADSHEET_ID = '1_1xazCEYAIFTRQo6t5INUjTlqNlkWuLWLR2llry7u8w';
 const RESPONSES_SHEET_ID = 0;
 const RESPONSES_SHEET_NAME = 'Responses';
-const FORM_STYLE_SPREADSHEET_ID = '1Vj7LHJ_FtCkvQTElJv_abSDPPbnP5Y6pQtX2_Bvzbas';
 const FORM_STYLE_RESPONSES_SHEET_NAME = '網站問卷回覆';
 
 const RESPONSE_HEADERS = [
@@ -266,11 +265,11 @@ function setupResponsesSheet() {
 }
 
 /**
- * Creates the human-readable response tab in the reference spreadsheet.
+ * Creates the human-readable response tab in the response spreadsheet.
  * The final submissionId column is hidden and used only for retry-safe deduplication.
  */
 function setupFormStyleResponsesSheet() {
-  const spreadsheet = SpreadsheetApp.openById(FORM_STYLE_SPREADSHEET_ID);
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = getOrCreateFormStyleResponsesSheet_(spreadsheet);
 
   assertFormStyleHeaders_(sheet);
@@ -335,12 +334,7 @@ function doPost(event) {
       }
 
       assertHeaders_(sheet);
-      const formStyleSpreadsheet = SpreadsheetApp.openById(
-        FORM_STYLE_SPREADSHEET_ID,
-      );
-      const formStyleSheet = getOrCreateFormStyleResponsesSheet_(
-        formStyleSpreadsheet,
-      );
+      const formStyleSheet = getOrCreateFormStyleResponsesSheet_(spreadsheet);
       assertFormStyleHeaders_(formStyleSheet);
 
       if (hasSubmission_(sheet, submission.submissionId)) {

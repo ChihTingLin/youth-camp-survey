@@ -32,9 +32,9 @@ can be hosted from a GitHub Pages project subdirectory.
 The Apps Script handler stores each submission in two formats:
 
 - the normalized `Responses` worksheet used by the dashboard and statistics;
-- the human-readable `網站問卷回覆` worksheet in the reference spreadsheet.
+- the human-readable `網站問卷回覆` worksheet in the same response spreadsheet.
 
 After updating `google-apps-script/Code.gs`, run
-`setupFormStyleResponsesSheet` once in the Apps Script editor to authorize the
-second spreadsheet and create its formatted worksheet. Then deploy a new web
-app version so future submissions use the updated handler.
+`setupFormStyleResponsesSheet` once in the Apps Script editor to create its
+formatted worksheet. Then deploy a new web app version so future submissions
+use the updated handler.
