@@ -99,7 +99,8 @@
       .chart-value { color: #506f5e; font-size: 12px; font-weight: 700; text-align: right; white-space: nowrap; }
       .chart-empty { margin: 4px 0 0; color: #8b938f; font-size: 13px; }
       .pie-layout { display: grid; grid-template-columns: minmax(170px, .8fr) minmax(220px, 1.2fr); align-items: center; gap: 24px; }
-      .pie-chart { width: min(100%, 230px); aspect-ratio: 1; justify-self: center; border: 8px solid rgba(255,255,255,.75); border-radius: 50%; box-shadow: 0 8px 24px rgba(49,65,60,.12); }
+      .pie-chart { position: relative; width: min(100%, 230px); aspect-ratio: 1; justify-self: center; border: 8px solid rgba(255,255,255,.75); border-radius: 50%; box-shadow: 0 8px 24px rgba(49,65,60,.12); }
+      .pie-slice-label { position: absolute; z-index: 1; transform: translate(-50%, -50%); border-radius: 999px; padding: 3px 6px; color: white; background: rgba(49,65,60,.82); box-shadow: 0 2px 7px rgba(49,65,60,.2); font-size: 9px; font-weight: 750; line-height: 1; white-space: nowrap; pointer-events: none; }
       .pie-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 16px; }
       .pie-legend-item { display: grid; grid-template-columns: 11px 1fr auto; align-items: center; gap: 7px; min-width: 0; color: #43524d; font-size: 12px; }
       .pie-swatch { width: 11px; height: 11px; border-radius: 3px; }
@@ -457,6 +458,22 @@
           populated.map((entry) => `${entry.label} ${Math.round((entry.count / total) * 100)}%`).join('，')
         );
 
+        cursor = 0;
+        populated.forEach((entry) => {
+          const percentage = (entry.count / total) * 100;
+          const midpointDegrees = ((cursor + percentage / 2) / 100) * 360 - 90;
+          const radians = midpointDegrees * Math.PI / 180;
+          const label = element(
+            'span',
+            'pie-slice-label',
+            `${entry.label} ${Math.round(percentage)}%`
+          );
+          label.style.left = `${50 + Math.cos(radians) * 31}%`;
+          label.style.top = `${50 + Math.sin(radians) * 31}%`;
+          pie.append(label);
+          cursor += percentage;
+        });
+
         const legend = element('div', 'pie-legend');
         populated.forEach((entry, index) => {
           const percentage = Math.round((entry.count / total) * 100);
@@ -465,8 +482,8 @@
           swatch.style.background = pieColors[index % pieColors.length];
           item.append(
             swatch,
-            element('span', 'pie-legend-label', entry.label),
-            element('span', 'pie-legend-value', `${entry.count}・${percentage}%`)
+            element('span', 'pie-legend-label', `${entry.label}（${entry.count} 份）`),
+            element('span', 'pie-legend-value', `${percentage}%`)
           );
           legend.append(item);
         });

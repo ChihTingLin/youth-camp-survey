@@ -790,9 +790,15 @@ function normalizeHeader_(value) {
 }
 
 function normalizeGroupValue_(value) {
-  const trimmed = value.trim();
-  const legacyIndex = LEGACY_GROUP_VALUES.indexOf(trimmed);
-  return legacyIndex >= 0 ? GROUP_VALUES[legacyIndex] : trimmed;
+  const normalized = value.trim().replace(/\s+/g, '');
+  if (GROUP_VALUES.includes(normalized)) return normalized;
+
+  const legacyIndex = LEGACY_GROUP_VALUES.indexOf(normalized);
+  if (legacyIndex >= 0) return GROUP_VALUES[legacyIndex];
+
+  // Ignore timestamps and other shifted/malformed values instead of treating
+  // them as a new group in the dashboard.
+  return '';
 }
 
 function hasSubmission_(sheet, submissionId) {
