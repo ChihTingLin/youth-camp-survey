@@ -98,6 +98,13 @@
       .chart-fill { height: 100%; min-width: 0; border-radius: inherit; background: linear-gradient(90deg,#efbd67,#506f5e); }
       .chart-value { color: #506f5e; font-size: 12px; font-weight: 700; text-align: right; white-space: nowrap; }
       .chart-empty { margin: 4px 0 0; color: #8b938f; font-size: 13px; }
+      .pie-layout { display: grid; grid-template-columns: minmax(170px, .8fr) minmax(220px, 1.2fr); align-items: center; gap: 24px; }
+      .pie-chart { width: min(100%, 230px); aspect-ratio: 1; justify-self: center; border: 8px solid rgba(255,255,255,.75); border-radius: 50%; box-shadow: 0 8px 24px rgba(49,65,60,.12); }
+      .pie-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 16px; }
+      .pie-legend-item { display: grid; grid-template-columns: 11px 1fr auto; align-items: center; gap: 7px; min-width: 0; color: #43524d; font-size: 12px; }
+      .pie-swatch { width: 11px; height: 11px; border-radius: 3px; }
+      .pie-legend-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pie-legend-value { color: #506f5e; font-weight: 700; white-space: nowrap; }
 
       @media (max-width: 720px) {
         .app { padding: 18px; }
@@ -110,6 +117,8 @@
         .analytics-grid { grid-template-columns: 1fr; }
         .chart-card-wide { grid-column: auto; }
         .chart-row { grid-template-columns: 68px minmax(80px, 1fr) 70px; }
+        .pie-layout { grid-template-columns: 1fr; gap: 18px; }
+        .pie-chart { width: min(72vw, 220px); }
       }
 
       @media print {
@@ -192,6 +201,7 @@
         noSpecialFeeling: '沒有特別感覺', other: '其他'
       };
       const groupValues = ['第1組', '第2組', '第3組', '第4組', '第5組', '第6組'];
+      const pieColors = ['#506f5e', '#efbd67', '#e9a080', '#8fa98f', '#c99572', '#7d8f79', '#d4aa5c', '#a87e69'];
 
       let allResponses = [];
       let activeView = 'all';
@@ -347,6 +357,10 @@
           label: group,
           count: groupCounts[group] || 0
         }));
+        const missingGroupCount = allResponses.filter((item) => !item.group).length;
+        if (missingGroupCount) {
+          groups.push({ label: '未填組別', count: missingGroupCount });
+        }
 
         const focusCounts = countSelections(allResponses.map((item) => item.focusAreas));
         const moodCounts = countSelections(allResponses.map((item) => item.recentMoods));
@@ -363,7 +377,7 @@
           '各題比例以總回覆數為分母；複選題合計可能超過 100%。';
         document.getElementById('responses').replaceChildren(
           analyticsGrid([
-            chartCard('各組回覆占比', '各組回覆數占全部回覆的比例。', groups, total, true),
+            pieChartCard('各組回覆占比', '各組回覆數占全部回覆的比例。', groups, total),
             chartCard('第 1 題｜最常佔據腦海', '可複選。', labelCounts(focusLabels, focusCounts), total),
             chartCard('第 2 題｜最近感受', '可複選。', labelCounts(moodLabels, moodCounts), total),
             chartCard('第 3 題｜身體能量', '依原問卷分數區間統計。', bandCounts(energyBands, physicalCounts), total),
@@ -415,6 +429,52 @@
         return card;
       }
 
+      function pieChartCard(title, subtitle, entries, total) {
+        const card = element('article', 'chart-card chart-card-wide');
+        card.append(
+          element('h2', 'chart-title', title),
+          element('p', 'chart-subtitle', subtitle)
+        );
+
+        const populated = entries.filter((entry) => entry.count > 0);
+        if (!total || populated.length === 0) {
+          card.append(element('p', 'chart-empty', '目前沒有可分析的回覆。'));
+          return card;
+        }
+
+        let cursor = 0;
+        const segments = populated.map((entry, index) => {
+          const start = cursor;
+          cursor += (entry.count / total) * 100;
+          return `${pieColors[index % pieColors.length]} ${start}% ${cursor}%`;
+        });
+        const layout = element('div', 'pie-layout');
+        const pie = element('div', 'pie-chart');
+        pie.style.background = `conic-gradient(${segments.join(', ')})`;
+        pie.setAttribute('role', 'img');
+        pie.setAttribute(
+          'aria-label',
+          populated.map((entry) => `${entry.label} ${Math.round((entry.count / total) * 100)}%`).join('，')
+        );
+
+        const legend = element('div', 'pie-legend');
+        populated.forEach((entry, index) => {
+          const percentage = Math.round((entry.count / total) * 100);
+          const item = element('div', 'pie-legend-item');
+          const swatch = element('span', 'pie-swatch');
+          swatch.style.background = pieColors[index % pieColors.length];
+          item.append(
+            swatch,
+            element('span', 'pie-legend-label', entry.label),
+            element('span', 'pie-legend-value', `${entry.count}・${percentage}%`)
+          );
+          legend.append(item);
+        });
+        layout.append(pie, legend);
+        card.append(layout);
+        return card;
+      }
+
       function countValues(values) {
         return values.reduce((counts, value) => {
           if (value) counts[value] = (counts[value] || 0) + 1;
@@ -433,14 +493,24 @@
       }
 
       function labelCounts(labels, counts) {
-        return Object.entries(labels).map(([id, label]) => ({
-          label,
-          count: counts[id] || 0
-        }));
+        return sortEntries(
+          Object.entries(labels).map(([id, label]) => ({
+            label,
+            count: counts[id] || 0
+          }))
+        );
       }
 
       function bandCounts(bands, counts) {
-        return bands.map((label) => ({ label, count: counts[label] || 0 }));
+        return sortEntries(
+          bands.map((label) => ({ label, count: counts[label] || 0 }))
+        );
+      }
+
+      function sortEntries(entries) {
+        return entries.slice().sort((a, b) =>
+          b.count - a.count || a.label.localeCompare(b.label, 'zh-Hant')
+        );
       }
 
       function energyBandLabel(value) {
